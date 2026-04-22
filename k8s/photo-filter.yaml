@@ -1,0 +1,110 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: photo-filter-config
+  namespace: app
+data:
+  config.yaml: |
+    llm:
+      base_url: "https://lite-llm.app:1443/v1"
+      api_key: "${LITELLM_API_KEY}"
+      model: "claude-sonnet-4-20250514"
+      confidence_threshold: 0.7
+      max_tokens: 1024
+      timeout: 60
+    sources:
+      - path: "/photos/sony"
+        camera: "sony_a7c2"
+        extensions: [".ARW", ".JPG"]
+        recursive: true
+      - path: "/photos/dji"
+        camera: "dji_action4"
+        extensions: [".JPG", ".DNG"]
+        recursive: true
+    quota:
+      daily_max: 200
+    database:
+      url: "postgresql+asyncpg://postgres:${DB_PASSWORD}@postgresql.db:5432/photo_filter"
+    processing:
+      max_image_size: 1920
+      jpeg_quality: 85
+      max_retries: 3
+    logging:
+      level: "INFO"
+      format: "json"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: photo-filter-secrets
+  namespace: app
+type: Opaque
+stringData:
+  LITELLM_API_KEY: "changeme"
+  DB_PASSWORD: "changeme"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: photo-filter
+  namespace: app
+spec:
+  schedule: "0 4 * * *"
+  timeZone: "Asia/Shanghai"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels:
+            app: photo-filter
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: photo-filter
+              image: registry.mouse-service.com:1443/photo-filter:latest
+              imagePullPolicy: Always
+              command: ["photo-filter", "--config", "/etc/photo-filter/config.yaml", "scan"]
+              env:
+                - name: LITELLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: photo-filter-secrets
+                      key: LITELLM_API_KEY
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: photo-filter-secrets
+                      key: DB_PASSWORD
+                - name: TZ
+                  value: "Asia/Shanghai"
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/photo-filter
+                - name: photos-sony
+                  mountPath: /photos/sony
+                - name: photos-dji
+                  mountPath: /photos/dji
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+          volumes:
+            - name: config
+              configMap:
+                name: photo-filter-config
+            - name: photos-sony
+              nfs:
+                server: nas
+                path: /volume2/photo/sony
+            - name: photos-dji
+              nfs:
+                server: nas
+                path: /volume2/photo/dji
