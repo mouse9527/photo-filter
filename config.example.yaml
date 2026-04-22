@@ -1,0 +1,36 @@
+llm:
+  base_url: "https://lite-llm.app:1443/v1"
+  api_key: "${LITELLM_API_KEY}"
+  model: "claude-sonnet-4-20250514"
+  confidence_threshold: 0.7
+  max_tokens: 1024
+  timeout: 60
+
+sources:
+  - path: "/photos/sony"
+    camera: "sony_a7c2"
+    extensions: [".ARW", ".JPG"]
+    recursive: true
+  - path: "/photos/dji"
+    camera: "dji_action4"
+    extensions: [".JPG", ".DNG"]
+    recursive: true
+
+quota:
+  daily_max: 200
+
+database:
+  url: "postgresql+asyncpg://postgres:${DB_PASSWORD}@postgresql.db:5432/photo_filter"
+
+processing:
+  max_image_size: 1920
+  jpeg_quality: 85
+  max_retries: 3
+
+logging:
+  level: "INFO"
+  format: "json"
+
+proxy:
+  http: "http://proxy.app:7890"
+  https: "http://proxy.app:7890"
