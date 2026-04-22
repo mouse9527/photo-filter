@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import structlog
 from collections import defaultdict
 from pathlib import Path
+
+import structlog
 
 from photo_filter.config import SourceConfig
 from photo_filter.models import PhotoUnit

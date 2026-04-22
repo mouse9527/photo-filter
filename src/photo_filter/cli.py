@@ -43,13 +43,13 @@ def scan(ctx: click.Context, dry_run: bool, limit: int | None) -> None:
 async def _scan(config, dry_run: bool, limit: int | None) -> None:
     from photo_filter.analyzer import analyze_photo, make_client
     from photo_filter.db import (
+        PhotoRecord,
         get_daily_count,
         get_processed_stems,
         init_db,
         make_engine,
         make_session_factory,
         upsert_record,
-        PhotoRecord,
     )
     from photo_filter.models import Verdict
     from photo_filter.mover import reject_photo
@@ -105,7 +105,11 @@ async def _scan(config, dry_run: bool, limit: int | None) -> None:
                         result = await analyze_photo(unit, client, config)
                         now = datetime.now(timezone.utc)
 
-                        if result.verdict == Verdict.REJECT and result.confidence >= config.llm.confidence_threshold:
+                        should_reject = (
+                            result.verdict == Verdict.REJECT
+                            and result.confidence >= config.llm.confidence_threshold
+                        )
+                        if should_reject:
                             status = "rejected"
                             if not dry_run:
                                 reject_photo(unit)
@@ -128,7 +132,11 @@ async def _scan(config, dry_run: bool, limit: int | None) -> None:
                             verdict_reasons=json.dumps(result.reasons),
                             llm_model=config.llm.model,
                             llm_response=result.raw_response,
-                            file_size_bytes=unit.analysis_path.stat().st_size if unit.analysis_path and unit.analysis_path.exists() else None,
+                            file_size_bytes=(
+                                unit.analysis_path.stat().st_size
+                                if unit.analysis_path and unit.analysis_path.exists()
+                                else None
+                            ),
                             processed_at=now,
                         )
                         await upsert_record(session, record)
@@ -168,7 +176,10 @@ async def _scan(config, dry_run: bool, limit: int | None) -> None:
         errors=total_errors,
         dry_run=dry_run,
     )
-    click.echo(f"Done: {total_analyzed} analyzed, {total_rejected} rejected, {total_kept} kept, {total_errors} errors")
+    click.echo(
+        f"Done: {total_analyzed} analyzed, {total_rejected} rejected, "
+        f"{total_kept} kept, {total_errors} errors"
+    )
 
 
 @main.command()
@@ -231,8 +242,6 @@ async def _retry_errors(config, dry_run: bool) -> None:
         get_error_records,
         make_engine,
         make_session_factory,
-        upsert_record,
-        PhotoRecord,
     )
     from photo_filter.models import PhotoUnit, Verdict
     from photo_filter.mover import reject_photo
@@ -265,7 +274,11 @@ async def _retry_errors(config, dry_run: bool) -> None:
                 try:
                     result = await analyze_photo(unit, client, config)
                     now = datetime.now(timezone.utc)
-                    if result.verdict == Verdict.REJECT and result.confidence >= config.llm.confidence_threshold:
+                    should_reject = (
+                        result.verdict == Verdict.REJECT
+                        and result.confidence >= config.llm.confidence_threshold
+                    )
+                    if should_reject:
                         record.status = "rejected"
                         if not dry_run:
                             reject_photo(unit)
