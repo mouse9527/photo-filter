@@ -124,12 +124,12 @@ async def get_review_photos(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[PhotoRecord], int]:
-    query = select(PhotoRecord).where(
-        PhotoRecord.status.in_(["rejected", "review"])
-    )
-    count_query = select(func.count(PhotoRecord.id)).where(
-        PhotoRecord.status.in_(["rejected", "review"])
-    )
+    base_filter = [
+        PhotoRecord.status.in_(["rejected", "review"]),
+        ~PhotoRecord.source_dir.contains("@eaDir"),
+    ]
+    query = select(PhotoRecord).where(*base_filter)
+    count_query = select(func.count(PhotoRecord.id)).where(*base_filter)
     if status:
         query = query.where(PhotoRecord.status == status)
         count_query = count_query.where(PhotoRecord.status == status)
