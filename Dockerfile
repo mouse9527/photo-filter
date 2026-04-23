@@ -3,7 +3,8 @@ WORKDIR /build
 RUN pip install --no-cache-dir build
 COPY pyproject.toml .
 COPY src/ src/
-RUN pip install --no-cache-dir --prefix=/install .
+RUN pip install --no-cache-dir --prefix=/install . \
+    && cp -r src/photo_filter/static /install/lib/python3.13/site-packages/photo_filter/static
 
 FROM python:3.13-slim
 WORKDIR /app
