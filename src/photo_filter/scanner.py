@@ -39,7 +39,7 @@ def scan_source(source: SourceConfig) -> list[PhotoUnit]:
     for file_path in iterator:
         if not file_path.is_file():
             continue
-        if REJECTED_DIR in file_path.parts or "#recycle" in file_path.parts:
+        if REJECTED_DIR in file_path.parts or "#recycle" in file_path.parts or "@eaDir" in file_path.parts:
             continue
         ext = file_path.suffix.upper()
         if ext not in allowed:
