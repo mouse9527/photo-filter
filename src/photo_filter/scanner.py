@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from collections import defaultdict
 from pathlib import Path
 
@@ -14,14 +13,6 @@ logger = structlog.get_logger()
 RAW_EXTENSIONS = {".ARW", ".arw", ".DNG", ".dng", ".CR3", ".cr3", ".NEF", ".nef"}
 JPEG_EXTENSIONS = {".JPG", ".jpg", ".JPEG", ".jpeg"}
 REJECTED_DIR = "_rejected"
-
-
-def _compute_sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def scan_source(source: SourceConfig) -> list[PhotoUnit]:
@@ -66,7 +57,6 @@ def scan_source(source: SourceConfig) -> list[PhotoUnit]:
             jpg_path=jpg_path,
             arw_path=files["raw"][0] if files["raw"] else None,
             extra_paths=files["jpg"][1:] + files["raw"][1:] + files["other"],
-            file_hash=_compute_sha256(jpg_path) if jpg_path else None,
         )
         if unit.analysis_path is None:
             logger.debug("skipping_no_jpg", stem=stem, source_dir=source_dir)
@@ -79,6 +69,10 @@ def scan_source(source: SourceConfig) -> list[PhotoUnit]:
 
 
 def filter_unprocessed(
-    units: list[PhotoUnit], processed_hashes: set[str]
+    units: list[PhotoUnit],
+    processed_keys: set[tuple[str, str]],
 ) -> list[PhotoUnit]:
-    return [u for u in units if u.file_hash and u.file_hash not in processed_hashes]
+    return [
+        u for u in units
+        if (u.stem, str(u.source_dir)) not in processed_keys
+    ]

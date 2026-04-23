@@ -36,7 +36,6 @@ class PhotoUnit:
     jpg_path: Path | None = None
     arw_path: Path | None = None
     extra_paths: list[Path] = field(default_factory=list)
-    file_hash: str | None = None
 
     @property
     def analysis_path(self) -> Path | None:

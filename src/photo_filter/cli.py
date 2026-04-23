@@ -80,7 +80,7 @@ async def _process_one(
             record = PhotoRecord(
                 file_stem=unit.stem,
                 source_dir=str(unit.source_dir),
-                file_hash=unit.file_hash,
+
                 jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
                 arw_path=str(unit.arw_path) if unit.arw_path else None,
                 camera=unit.camera,
@@ -123,7 +123,7 @@ async def _process_one(
                 record = PhotoRecord(
                     file_stem=unit.stem,
                     source_dir=str(unit.source_dir),
-                    file_hash=unit.file_hash,
+    
                     jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
                     arw_path=str(unit.arw_path) if unit.arw_path else None,
                     camera=unit.camera,
@@ -150,7 +150,7 @@ async def _scan(
     from photo_filter.analyzer import make_client
     from photo_filter.db import (
         get_daily_count,
-        get_processed_hashes,
+        get_processed_keys,
         init_db,
         make_engine,
         make_session_factory,
@@ -177,7 +177,7 @@ async def _scan(
 
     try:
         async with session_factory() as session:
-            processed_hashes = await get_processed_hashes(session)
+            processed_keys = await get_processed_keys(session)
 
         for source in config.sources:
             logger.info("scanning_source", path=source.path, camera=source.camera)
@@ -187,7 +187,7 @@ async def _scan(
                 logger.info("no_photos_found", source=source.path)
                 continue
 
-            unprocessed = filter_unprocessed(units, processed_hashes)
+            unprocessed = filter_unprocessed(units, processed_keys)
             logger.info(
                 "unprocessed_photos",
                 source=source.path,

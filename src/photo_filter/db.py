@@ -66,11 +66,11 @@ async def init_db(engine) -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def get_processed_hashes(session: AsyncSession) -> set[str]:
+async def get_processed_keys(session: AsyncSession) -> set[tuple[str, str]]:
     result = await session.execute(
-        select(PhotoRecord.file_hash).where(PhotoRecord.file_hash.is_not(None))
+        select(PhotoRecord.file_stem, PhotoRecord.source_dir)
     )
-    return {row[0] for row in result.all()}
+    return {(row[0], row[1]) for row in result.all()}
 
 
 async def get_daily_count(session: AsyncSession, day: date | None = None) -> int:
@@ -87,12 +87,13 @@ async def get_daily_count(session: AsyncSession, day: date | None = None) -> int
 
 
 async def upsert_record(session: AsyncSession, record: PhotoRecord) -> PhotoRecord:
-    existing = None
-    if record.file_hash:
-        result = await session.execute(
-            select(PhotoRecord).where(PhotoRecord.file_hash == record.file_hash)
+    result = await session.execute(
+        select(PhotoRecord).where(
+            PhotoRecord.file_stem == record.file_stem,
+            PhotoRecord.source_dir == record.source_dir,
         )
-        existing = result.scalar_one_or_none()
+    )
+    existing = result.scalar_one_or_none()
     if existing:
         existing.file_stem = record.file_stem
         existing.source_dir = record.source_dir
