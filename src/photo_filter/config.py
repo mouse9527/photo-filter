@@ -52,14 +52,20 @@ class DatabaseConfig(BaseModel):
 
 
 class ProcessingConfig(BaseModel):
-    max_image_size: int = 1920
+    max_image_size: int = 3840
     jpeg_quality: int = 85
     max_retries: int = 3
+    concurrency: int = 5
 
 
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     format: str = "json"
+
+
+class ReportConfig(BaseModel):
+    output_dir: str = "."
+    enabled: bool = True
 
 
 class ProxyConfig(BaseModel):
@@ -74,6 +80,7 @@ class AppConfig(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    report: ReportConfig = Field(default_factory=ReportConfig)
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
 
 

@@ -24,7 +24,7 @@ class Base(DeclarativeBase):
 class PhotoRecord(Base):
     __tablename__ = "photo_records"
     __table_args__ = (
-        UniqueConstraint("file_stem", "source_dir", name="uq_photo_stem_dir"),
+        UniqueConstraint("file_hash", name="uq_photo_file_hash"),
         Index("idx_photo_records_status", "status"),
         Index("idx_photo_records_source_dir", "source_dir"),
         Index("idx_photo_records_processed_at", "processed_at"),
@@ -34,6 +34,7 @@ class PhotoRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     file_stem: Mapped[str] = mapped_column(String(255), nullable=False)
     source_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_hash: Mapped[str | None] = mapped_column(String(64))
     jpg_path: Mapped[str | None] = mapped_column(String(1024))
     arw_path: Mapped[str | None] = mapped_column(String(1024))
     camera: Mapped[str | None] = mapped_column(String(50))
@@ -65,9 +66,9 @@ async def init_db(engine) -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def get_processed_stems(session: AsyncSession, source_dir: str) -> set[str]:
+async def get_processed_hashes(session: AsyncSession) -> set[str]:
     result = await session.execute(
-        select(PhotoRecord.file_stem).where(PhotoRecord.source_dir == source_dir)
+        select(PhotoRecord.file_hash).where(PhotoRecord.file_hash.is_not(None))
     )
     return {row[0] for row in result.all()}
 
@@ -86,22 +87,25 @@ async def get_daily_count(session: AsyncSession, day: date | None = None) -> int
 
 
 async def upsert_record(session: AsyncSession, record: PhotoRecord) -> PhotoRecord:
-    existing = await session.execute(
-        select(PhotoRecord).where(
-            PhotoRecord.file_stem == record.file_stem,
-            PhotoRecord.source_dir == record.source_dir,
+    existing = None
+    if record.file_hash:
+        result = await session.execute(
+            select(PhotoRecord).where(PhotoRecord.file_hash == record.file_hash)
         )
-    )
-    existing_record = existing.scalar_one_or_none()
-    if existing_record:
-        existing_record.status = record.status
-        existing_record.confidence = record.confidence
-        existing_record.verdict_reasons = record.verdict_reasons
-        existing_record.llm_model = record.llm_model
-        existing_record.llm_response = record.llm_response
-        existing_record.processed_at = record.processed_at
-        existing_record.updated_at = datetime.now(timezone.utc)
-        return existing_record
+        existing = result.scalar_one_or_none()
+    if existing:
+        existing.file_stem = record.file_stem
+        existing.source_dir = record.source_dir
+        existing.jpg_path = record.jpg_path
+        existing.arw_path = record.arw_path
+        existing.status = record.status
+        existing.confidence = record.confidence
+        existing.verdict_reasons = record.verdict_reasons
+        existing.llm_model = record.llm_model
+        existing.llm_response = record.llm_response
+        existing.processed_at = record.processed_at
+        existing.updated_at = datetime.now(timezone.utc)
+        return existing
     session.add(record)
     return record
 

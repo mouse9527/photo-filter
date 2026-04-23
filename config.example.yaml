@@ -23,9 +23,14 @@ database:
   url: "postgresql+asyncpg://postgres:${DB_PASSWORD}@postgresql.db:5432/photo_filter"
 
 processing:
-  max_image_size: 1920
+  max_image_size: 3840
   jpeg_quality: 85
   max_retries: 3
+  concurrency: 5
+
+report:
+  output_dir: "/reports"
+  enabled: true
 
 logging:
   level: "INFO"
