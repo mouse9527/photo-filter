@@ -68,6 +68,12 @@ class ReportConfig(BaseModel):
     enabled: bool = True
 
 
+class WebConfig(BaseModel):
+    host: str = "0.0.0.0"
+    port: int = 8000
+    photo_dirs: list[str] = Field(default_factory=list)
+
+
 class ProxyConfig(BaseModel):
     http: str | None = None
     https: str | None = None
@@ -81,6 +87,7 @@ class AppConfig(BaseModel):
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     report: ReportConfig = Field(default_factory=ReportConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
 
 

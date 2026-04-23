@@ -286,6 +286,26 @@ async def _stats(config) -> None:
     click.echo(f"  Pending:  {s.get('pending', 0)}")
 
 
+@main.command()
+@click.option("--host", default=None, help="Bind host (overrides config).")
+@click.option("--port", type=int, default=None, help="Bind port (overrides config).")
+@click.pass_context
+def web(ctx: click.Context, host: str | None, port: int | None) -> None:
+    """Start the review web UI."""
+    import uvicorn
+
+    from photo_filter.web import create_app
+
+    config = ctx.obj["config"]
+    app = create_app(config)
+    uvicorn.run(
+        app,
+        host=host or config.web.host,
+        port=port or config.web.port,
+        log_level="info",
+    )
+
+
 @main.command(name="init-db")
 @click.pass_context
 def init_db_cmd(ctx: click.Context) -> None:

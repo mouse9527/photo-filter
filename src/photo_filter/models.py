@@ -17,6 +17,7 @@ class Status(StrEnum):
     REJECTED = "rejected"
     ERROR = "error"
     REVIEW = "review"
+    DELETED = "deleted"
 
 
 class IssueCategory(StrEnum):

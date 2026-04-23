@@ -46,3 +46,55 @@ def undo_rejection(unit: PhotoUnit) -> list[Path]:
         logger.info("file_restored", src=str(rejected_path), dst=str(original_path))
 
     return restored
+
+
+RECYCLE_DIR = "#recycle"
+
+
+def _find_share_root(file_path: Path, photo_dirs: list[str]) -> Path | None:
+    for d in photo_dirs:
+        root = Path(d)
+        try:
+            file_path.relative_to(root)
+            return root
+        except ValueError:
+            continue
+    return None
+
+
+def delete_photo(unit: PhotoUnit, photo_dirs: list[str]) -> list[Path]:
+    moved = []
+    for src in unit.all_paths:
+        actual = src
+        rejected_path = unit.source_dir / REJECTED_DIR / src.name
+        if not actual.exists() and rejected_path.exists():
+            actual = rejected_path
+
+        if not actual.exists():
+            logger.warning("delete_file_not_found", path=str(src))
+            continue
+
+        share_root = _find_share_root(actual, photo_dirs)
+        if share_root is None:
+            logger.warning(
+                "delete_no_share_root", path=str(actual),
+            )
+            continue
+
+        relative = actual.relative_to(share_root)
+        dest = share_root / RECYCLE_DIR / relative
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        if dest.exists():
+            stem = dest.stem
+            suffix = dest.suffix
+            counter = 1
+            while dest.exists():
+                dest = dest.with_name(f"{stem}_{counter}{suffix}")
+                counter += 1
+
+        shutil.move(str(actual), str(dest))
+        moved.append(dest)
+        logger.info("file_recycled", src=str(actual), dst=str(dest))
+
+    return moved

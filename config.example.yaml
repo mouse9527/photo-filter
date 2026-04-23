@@ -32,6 +32,12 @@ report:
   output_dir: "/reports"
   enabled: true
 
+web:
+  host: "0.0.0.0"
+  port: 8000
+  photo_dirs:
+    - "/photos"
+
 logging:
   level: "INFO"
   format: "json"

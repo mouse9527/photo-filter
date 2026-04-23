@@ -117,6 +117,48 @@ async def get_error_records(session: AsyncSession) -> list[PhotoRecord]:
     return list(result.scalars().all())
 
 
+async def get_review_photos(
+    session: AsyncSession,
+    status: str | None = None,
+    camera: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[PhotoRecord], int]:
+    query = select(PhotoRecord).where(
+        PhotoRecord.status.in_(["rejected", "review"])
+    )
+    count_query = select(func.count(PhotoRecord.id)).where(
+        PhotoRecord.status.in_(["rejected", "review"])
+    )
+    if status:
+        query = query.where(PhotoRecord.status == status)
+        count_query = count_query.where(PhotoRecord.status == status)
+    if camera:
+        query = query.where(PhotoRecord.camera == camera)
+        count_query = count_query.where(PhotoRecord.camera == camera)
+
+    total = (await session.execute(count_query)).scalar_one()
+    query = query.order_by(PhotoRecord.processed_at.desc())
+    query = query.offset(offset).limit(limit)
+    result = await session.execute(query)
+    return list(result.scalars().all()), total
+
+
+async def get_photo_by_id(
+    session: AsyncSession, photo_id: int,
+) -> PhotoRecord | None:
+    return await session.get(PhotoRecord, photo_id)
+
+
+async def get_cameras(session: AsyncSession) -> list[str]:
+    result = await session.execute(
+        select(PhotoRecord.camera)
+        .where(PhotoRecord.camera.is_not(None))
+        .distinct()
+    )
+    return [row[0] for row in result.all()]
+
+
 async def get_stats(session: AsyncSession) -> dict[str, int]:
     result = await session.execute(
         select(PhotoRecord.status, func.count(PhotoRecord.id)).group_by(PhotoRecord.status)

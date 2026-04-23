@@ -13,5 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 COPY config.example.yaml /app/config.example.yaml
 
+EXPOSE 8000
+
 ENTRYPOINT ["photo-filter"]
 CMD ["scan"]

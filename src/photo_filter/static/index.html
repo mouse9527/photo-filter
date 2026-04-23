@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Filter Review</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#111;color:#eee;min-height:100vh}
+header{padding:16px 24px;background:#1a1a1a;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+header h1{font-size:18px;font-weight:600}
+.filters{display:flex;gap:8px;align-items:center}
+.filters select{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;font-size:13px}
+.stats{font-size:13px;color:#888}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:24px}
+.card{background:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #2a2a2a;transition:border-color .2s}
+.card:hover{border-color:#555}
+.card .thumb{position:relative;aspect-ratio:3/2;overflow:hidden;cursor:pointer;background:#000}
+.card .thumb img{width:100%;height:100%;object-fit:cover;transition:transform .2s}
+.card .thumb:hover img{transform:scale(1.05)}
+.badge{position:absolute;top:8px;left:8px;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
+.badge.rejected{background:#dc3545;color:#fff}
+.badge.review{background:#fd7e14;color:#fff}
+.card .info{padding:12px}
+.card .info .name{font-size:14px;font-weight:500;margin-bottom:4px}
+.card .info .meta{font-size:12px;color:#888;margin-bottom:6px}
+.card .info .reasons{font-size:12px;color:#aaa;margin-bottom:10px}
+.card .info .reasons span{display:inline-block;background:#2a2a2a;padding:2px 6px;border-radius:3px;margin:2px 2px 2px 0}
+.card .actions{display:flex;gap:8px;padding:0 12px 12px}
+.btn{flex:1;padding:8px;border:none;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-undo{background:#198754;color:#fff}
+.btn-delete{background:#dc3545;color:#fff}
+.overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);z-index:1000;cursor:zoom-out;align-items:center;justify-content:center}
+.overlay.active{display:flex}
+.overlay img{max-width:95%;max-height:95%;object-fit:contain}
+.empty{text-align:center;padding:80px 24px;color:#666;font-size:16px}
+.loading{text-align:center;padding:40px;color:#666}
+.pagination{display:flex;justify-content:center;gap:8px;padding:24px}
+.pagination button{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px}
+.pagination button:disabled{opacity:.3;cursor:not-allowed}
+.pagination button:hover:not(:disabled){border-color:#888}
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:14px;z-index:2000;animation:fadeInUp .3s}
+.toast.success{background:#198754;color:#fff}
+.toast.error{background:#dc3545;color:#fff}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Photo Filter Review</h1>
+  <div class="filters">
+    <select id="filterStatus">
+      <option value="">All Status</option>
+      <option value="rejected">Rejected</option>
+      <option value="review">Review</option>
+    </select>
+    <select id="filterCamera">
+      <option value="">All Cameras</option>
+    </select>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<div id="grid" class="grid"></div>
+<div id="empty" class="empty" style="display:none">No photos to review.</div>
+<div id="loading" class="loading">Loading...</div>
+
+<div class="pagination" id="pagination" style="display:none">
+  <button id="prevBtn" onclick="prevPage()">Previous</button>
+  <span id="pageInfo" style="padding:8px;color:#888;font-size:13px"></span>
+  <button id="nextBtn" onclick="nextPage()">Next</button>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeOverlay()">
+  <img id="overlayImg" src="" alt="">
+</div>
+
+<script>
+const PAGE_SIZE = 50;
+let currentOffset = 0;
+let totalPhotos = 0;
+
+async function loadCameras() {
+  try {
+    const res = await fetch('/api/cameras');
+    const data = await res.json();
+    const sel = document.getElementById('filterCamera');
+    data.cameras.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
+  } catch (e) { console.error('Failed to load cameras:', e); }
+}
+
+async function loadPhotos() {
+  const status = document.getElementById('filterStatus').value;
+  const camera = document.getElementById('filterCamera').value;
+  const params = new URLSearchParams({limit: PAGE_SIZE, offset: currentOffset});
+  if (status) params.set('status', status);
+  if (camera) params.set('camera', camera);
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('grid').innerHTML = '';
+  document.getElementById('empty').style.display = 'none';
+
+  try {
+    const res = await fetch('/api/photos?' + params);
+    const data = await res.json();
+    totalPhotos = data.total;
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('stats').textContent = `${totalPhotos} photos`;
+
+    if (data.items.length === 0) {
+      document.getElementById('empty').style.display = 'block';
+      document.getElementById('pagination').style.display = 'none';
+      return;
+    }
+
+    const grid = document.getElementById('grid');
+    data.items.forEach(p => grid.appendChild(createCard(p)));
+    updatePagination();
+  } catch (e) {
+    document.getElementById('loading').textContent = 'Failed to load photos.';
+    console.error(e);
+  }
+}
+
+function createCard(photo) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'card-' + photo.id;
+
+  const imgSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
+  const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
+  const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
+  const date = photo.processed_at ? new Date(photo.processed_at).toLocaleDateString() : '';
+
+  card.innerHTML = `
+    <div class="thumb" onclick="openOverlay('${esc(imgSrc)}')">
+      ${imgSrc ? `<img src="${esc(imgSrc)}" loading="lazy" alt="${esc(photo.file_stem)}">` : ''}
+      <span class="badge ${photo.status}">${photo.status}</span>
+    </div>
+    <div class="info">
+      <div class="name">${esc(photo.file_stem)}</div>
+      <div class="meta">${esc(photo.camera || '')} &middot; ${conf} &middot; ${date}</div>
+      ${reasons ? `<div class="reasons">${reasons}</div>` : ''}
+    </div>
+    <div class="actions">
+      <button class="btn btn-undo" onclick="undoPhoto(${photo.id})">Undo</button>
+      <button class="btn btn-delete" onclick="deletePhoto(${photo.id})">Delete</button>
+    </div>
+  `;
+  return card;
+}
+
+async function undoPhoto(id) {
+  if (!confirm('Restore this photo to its original location?')) return;
+  const btn = event.target;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/photos/${id}/undo`, {method: 'POST'});
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    removeCard(id);
+    toast('Photo restored', 'success');
+  } catch (e) {
+    toast('Undo failed: ' + e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+async function deletePhoto(id) {
+  if (!confirm('Move this photo to recycle bin?')) return;
+  const btn = event.target;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/photos/${id}/delete`, {method: 'POST'});
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    removeCard(id);
+    toast('Photo deleted', 'success');
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+function removeCard(id) {
+  const card = document.getElementById('card-' + id);
+  if (card) {
+    card.style.transition = 'opacity .3s';
+    card.style.opacity = '0';
+    setTimeout(() => card.remove(), 300);
+  }
+  totalPhotos--;
+  document.getElementById('stats').textContent = `${totalPhotos} photos`;
+}
+
+function openOverlay(src) {
+  if (!src) return;
+  document.getElementById('overlayImg').src = src;
+  document.getElementById('overlay').classList.add('active');
+}
+
+function closeOverlay() {
+  document.getElementById('overlay').classList.remove('active');
+  document.getElementById('overlayImg').src = '';
+}
+
+function updatePagination() {
+  const pag = document.getElementById('pagination');
+  if (totalPhotos <= PAGE_SIZE) { pag.style.display = 'none'; return; }
+  pag.style.display = 'flex';
+  const page = Math.floor(currentOffset / PAGE_SIZE) + 1;
+  const pages = Math.ceil(totalPhotos / PAGE_SIZE);
+  document.getElementById('pageInfo').textContent = `${page} / ${pages}`;
+  document.getElementById('prevBtn').disabled = currentOffset === 0;
+  document.getElementById('nextBtn').disabled = currentOffset + PAGE_SIZE >= totalPhotos;
+}
+
+function prevPage() { currentOffset = Math.max(0, currentOffset - PAGE_SIZE); loadPhotos(); }
+function nextPage() { currentOffset += PAGE_SIZE; loadPhotos(); }
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+document.getElementById('filterStatus').addEventListener('change', () => { currentOffset = 0; loadPhotos(); });
+document.getElementById('filterCamera').addEventListener('change', () => { currentOffset = 0; loadPhotos(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
+
+loadCameras();
+loadPhotos();
+</script>
+</body>
+</html>
