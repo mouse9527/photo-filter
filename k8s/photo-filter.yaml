@@ -66,7 +66,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: photo-filter
-              image: registry.mouse-service.com:1443/photo-filter:latest
+              image: ghcr.io/mouse9527/photo-filter:latest
               imagePullPolicy: Always
               command: ["photo-filter", "--config", "/etc/photo-filter/config.yaml", "scan"]
               env:
