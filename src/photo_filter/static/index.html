@@ -138,7 +138,7 @@ function createCard(photo) {
 
   const baseSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
   const thumbSrc = baseSrc ? baseSrc + '?w=400&q=60' : '';
-  const fullSrc = baseSrc ? baseSrc + '?w=1920&q=85' : '';
+  const fullSrc = baseSrc ? baseSrc + '?w=1440&q=80' : '';
   const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
   const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
   const date = photo.processed_at ? new Date(photo.processed_at).toLocaleDateString() : '';

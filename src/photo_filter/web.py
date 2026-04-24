@@ -10,7 +10,7 @@ from pathlib import Path
 import structlog
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from PIL import Image
+from PIL import Image, ImageOps
 
 from photo_filter.config import AppConfig
 from photo_filter.db import (
@@ -29,7 +29,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 WARM_PRESETS = [
     (400, 60),
-    (1920, 85),
+    (1440, 80),
 ]
 
 
@@ -109,6 +109,7 @@ def create_app(config: AppConfig) -> FastAPI:
         file_path: Path, max_size: int, quality: int,
     ) -> bytes:
         with Image.open(file_path) as img:
+            img = ImageOps.exif_transpose(img)
             img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
@@ -151,7 +152,7 @@ def create_app(config: AppConfig) -> FastAPI:
             return
         logger.info("cache_warm_start", count=len(jpg_paths))
         loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             await asyncio.gather(*[
                 loop.run_in_executor(pool, _warm_one, path)
                 for path in jpg_paths
