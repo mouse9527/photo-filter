@@ -55,9 +55,13 @@ async def _process_one(
     from photo_filter.db import PhotoRecord, upsert_record
     from photo_filter.models import Verdict
     from photo_filter.mover import reject_photo
+    from photo_filter.scanner import compute_sha256
 
     async with semaphore:
         try:
+            if unit.analysis_path:
+                unit.file_hash = compute_sha256(unit.analysis_path)
+
             result = await analyze_photo(unit, client, config)
             now = datetime.now(timezone.utc)
 
@@ -80,7 +84,7 @@ async def _process_one(
             record = PhotoRecord(
                 file_stem=unit.stem,
                 source_dir=str(unit.source_dir),
-
+                file_hash=unit.file_hash,
                 jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
                 arw_path=str(unit.arw_path) if unit.arw_path else None,
                 camera=unit.camera,
@@ -123,7 +127,7 @@ async def _process_one(
                 record = PhotoRecord(
                     file_stem=unit.stem,
                     source_dir=str(unit.source_dir),
-    
+                    file_hash=unit.file_hash,
                     jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
                     arw_path=str(unit.arw_path) if unit.arw_path else None,
                     camera=unit.camera,
@@ -149,11 +153,14 @@ async def _scan(
 ) -> None:
     from photo_filter.analyzer import make_client
     from photo_filter.db import (
+        count_processed_in_dir,
+        get_completed_dirs,
         get_daily_count,
         get_processed_keys,
         init_db,
         make_engine,
         make_session_factory,
+        upsert_scanned_dir,
     )
     from photo_filter.report import (
         PhotoResult,
@@ -181,7 +188,13 @@ async def _scan(
 
         for source in config.sources:
             logger.info("scanning_source", path=source.path, camera=source.camera)
-            units = scan_source(source)
+
+            async with session_factory() as session:
+                skip_dirs = await get_completed_dirs(
+                    session, camera=source.camera,
+                )
+
+            units, dir_counts = scan_source(source, skip_dirs=skip_dirs)
 
             if not units:
                 logger.info("no_photos_found", source=source.path)
@@ -219,6 +232,20 @@ async def _scan(
                 for unit in batch
             ]
             await asyncio.gather(*tasks)
+
+            affected_dirs = {str(u.source_dir) for u in batch}
+            async with session_factory() as session:
+                for dir_path in affected_dirs:
+                    expected = dir_counts.get(dir_path, 0)
+                    if expected == 0:
+                        continue
+                    actual = await count_processed_in_dir(session, dir_path)
+                    completed = actual >= expected
+                    await upsert_scanned_dir(
+                        session, dir_path, source.camera,
+                        expected, completed,
+                    )
+                await session.commit()
     finally:
         await engine.dispose()
 

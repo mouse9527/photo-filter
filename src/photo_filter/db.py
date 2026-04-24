@@ -4,9 +4,11 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Float,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -53,6 +55,22 @@ class PhotoRecord(Base):
     )
 
 
+class ScannedDirectory(Base):
+    __tablename__ = "scanned_directories"
+    __table_args__ = (
+        UniqueConstraint("dir_path", "camera", name="uq_scanned_dir"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    dir_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    camera: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    scanned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 def make_engine(database_url: str):
     return create_async_engine(database_url, echo=False)
 
@@ -95,8 +113,7 @@ async def upsert_record(session: AsyncSession, record: PhotoRecord) -> PhotoReco
     )
     existing = result.scalar_one_or_none()
     if existing:
-        existing.file_stem = record.file_stem
-        existing.source_dir = record.source_dir
+        existing.file_hash = record.file_hash
         existing.jpg_path = record.jpg_path
         existing.arw_path = record.arw_path
         existing.status = record.status
@@ -167,3 +184,53 @@ async def get_stats(session: AsyncSession) -> dict[str, int]:
     stats = {row[0]: row[1] for row in result.all()}
     stats["total"] = sum(stats.values())
     return stats
+
+
+async def get_completed_dirs(
+    session: AsyncSession, camera: str | None = None,
+) -> set[str]:
+    query = select(ScannedDirectory.dir_path).where(
+        ScannedDirectory.completed.is_(True),
+    )
+    if camera:
+        query = query.where(ScannedDirectory.camera == camera)
+    result = await session.execute(query)
+    return {row[0] for row in result.all()}
+
+
+async def upsert_scanned_dir(
+    session: AsyncSession,
+    dir_path: str,
+    camera: str,
+    file_count: int,
+    completed: bool,
+) -> None:
+    result = await session.execute(
+        select(ScannedDirectory).where(
+            ScannedDirectory.dir_path == dir_path,
+            ScannedDirectory.camera == camera,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.file_count = file_count
+        existing.completed = completed
+        existing.scanned_at = datetime.now(timezone.utc)
+    else:
+        session.add(ScannedDirectory(
+            dir_path=dir_path,
+            camera=camera,
+            file_count=file_count,
+            completed=completed,
+        ))
+
+
+async def count_processed_in_dir(
+    session: AsyncSession, source_dir: str,
+) -> int:
+    result = await session.execute(
+        select(func.count(PhotoRecord.id)).where(
+            PhotoRecord.source_dir == source_dir,
+        )
+    )
+    return result.scalar_one()
