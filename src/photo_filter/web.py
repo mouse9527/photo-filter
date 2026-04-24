@@ -29,6 +29,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 WARM_PRESETS = [
     (400, 60),
+    (1440, 80),
 ]
 
 
