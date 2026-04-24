@@ -29,7 +29,6 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 WARM_PRESETS = [
     (400, 60),
-    (1440, 80),
 ]
 
 
@@ -152,11 +151,9 @@ def create_app(config: AppConfig) -> FastAPI:
             return
         logger.info("cache_warm_start", count=len(jpg_paths))
         loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            await asyncio.gather(*[
-                loop.run_in_executor(pool, _warm_one, path)
-                for path in jpg_paths
-            ])
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for path in jpg_paths:
+                await loop.run_in_executor(pool, _warm_one, path)
         logger.info("cache_warm_done", cached=len(image_cache))
 
     @app.on_event("startup")
