@@ -197,13 +197,23 @@ def create_app(config: AppConfig) -> FastAPI:
         p = Path("/") / file_path
         if not _is_path_allowed(p):
             raise HTTPException(403, "Access denied")
-        data = _get_compressed(str(p), w, q)
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(None, _get_compressed, str(p), w, q)
         if data is None:
             raise HTTPException(404, "Photo not found")
         return Response(
             content=data,
             media_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    def _build_unit(record) -> PhotoUnit:
+        return PhotoUnit(
+            stem=record.file_stem,
+            source_dir=Path(record.source_dir),
+            camera=record.camera or "",
+            jpg_path=Path(record.jpg_path) if record.jpg_path else None,
+            arw_path=Path(record.arw_path) if record.arw_path else None,
         )
 
     @app.post("/api/photos/{photo_id}/undo")
@@ -216,23 +226,12 @@ def create_app(config: AppConfig) -> FastAPI:
                 raise HTTPException(
                     400, f"Cannot undo photo with status '{record.status}'",
                 )
-
-            unit = PhotoUnit(
-                stem=record.file_stem,
-                source_dir=Path(record.source_dir),
-                camera=record.camera or "",
-                jpg_path=(
-                    Path(record.jpg_path) if record.jpg_path else None
-                ),
-                arw_path=(
-                    Path(record.arw_path) if record.arw_path else None
-                ),
-            )
-            restored = undo_rejection(unit)
+            unit = _build_unit(record)
+            loop = asyncio.get_running_loop()
+            restored = await loop.run_in_executor(None, undo_rejection, unit)
             record.status = "kept"
             record.updated_at = datetime.now(timezone.utc)
             await session.commit()
-
         logger.info(
             "photo_undo", photo_id=photo_id, stem=record.file_stem,
             restored=len(restored),
@@ -247,23 +246,14 @@ def create_app(config: AppConfig) -> FastAPI:
                 raise HTTPException(404, "Record not found")
             if record.status == "deleted":
                 raise HTTPException(400, "Already deleted")
-
-            unit = PhotoUnit(
-                stem=record.file_stem,
-                source_dir=Path(record.source_dir),
-                camera=record.camera or "",
-                jpg_path=(
-                    Path(record.jpg_path) if record.jpg_path else None
-                ),
-                arw_path=(
-                    Path(record.arw_path) if record.arw_path else None
-                ),
+            unit = _build_unit(record)
+            loop = asyncio.get_running_loop()
+            moved = await loop.run_in_executor(
+                None, delete_photo, unit, photo_dirs,
             )
-            moved = delete_photo(unit, photo_dirs)
             record.status = "deleted"
             record.updated_at = datetime.now(timezone.utc)
             await session.commit()
-
         logger.info(
             "photo_deleted", photo_id=photo_id, stem=record.file_stem,
             recycled=len(moved),
@@ -275,15 +265,10 @@ def create_app(config: AppConfig) -> FastAPI:
             record = await get_photo_by_id(session, photo_id)
             if not record or record.status not in ("rejected", "review"):
                 return False
-            unit = PhotoUnit(
-                stem=record.file_stem,
-                source_dir=Path(record.source_dir),
-                camera=record.camera or "",
-                jpg_path=Path(record.jpg_path) if record.jpg_path else None,
-                arw_path=Path(record.arw_path) if record.arw_path else None,
-            )
+            unit = _build_unit(record)
+            loop = asyncio.get_running_loop()
             try:
-                undo_rejection(unit)
+                await loop.run_in_executor(None, undo_rejection, unit)
             except Exception:
                 return False
             record.status = "kept"
@@ -296,15 +281,12 @@ def create_app(config: AppConfig) -> FastAPI:
             record = await get_photo_by_id(session, photo_id)
             if not record or record.status == "deleted":
                 return False
-            unit = PhotoUnit(
-                stem=record.file_stem,
-                source_dir=Path(record.source_dir),
-                camera=record.camera or "",
-                jpg_path=Path(record.jpg_path) if record.jpg_path else None,
-                arw_path=Path(record.arw_path) if record.arw_path else None,
-            )
+            unit = _build_unit(record)
+            loop = asyncio.get_running_loop()
             try:
-                delete_photo(unit, photo_dirs)
+                await loop.run_in_executor(
+                    None, delete_photo, unit, photo_dirs,
+                )
             except Exception:
                 return False
             record.status = "deleted"
