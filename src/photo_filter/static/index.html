@@ -136,14 +136,16 @@ function createCard(photo) {
   card.className = 'card';
   card.id = 'card-' + photo.id;
 
-  const imgSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
+  const baseSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
+  const thumbSrc = baseSrc ? baseSrc + '?w=400&q=60' : '';
+  const fullSrc = baseSrc ? baseSrc + '?w=1920&q=85' : '';
   const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
   const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
   const date = photo.processed_at ? new Date(photo.processed_at).toLocaleDateString() : '';
 
   card.innerHTML = `
-    <div class="thumb" onclick="openOverlay('${esc(imgSrc)}')">
-      ${imgSrc ? `<img src="${esc(imgSrc)}" loading="lazy" alt="${esc(photo.file_stem)}">` : ''}
+    <div class="thumb" onclick="openOverlay('${esc(fullSrc)}')">
+      ${thumbSrc ? `<img src="${esc(thumbSrc)}" loading="lazy" alt="${esc(photo.file_stem)}">` : ''}
       <span class="badge ${photo.status}">${photo.status}</span>
     </div>
     <div class="info">

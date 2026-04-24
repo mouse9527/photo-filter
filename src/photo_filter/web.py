@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from PIL import Image
 
 from photo_filter.config import AppConfig
 from photo_filter.db import (
@@ -95,15 +97,35 @@ def create_app(config: AppConfig) -> FastAPI:
             cameras = await get_cameras(session)
         return {"cameras": cameras}
 
+    def _compress_image(
+        file_path: Path, max_size: int, quality: int,
+    ) -> bytes:
+        with Image.open(file_path) as img:
+            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=quality)
+            return buf.getvalue()
+
     @app.get("/photos/{file_path:path}")
-    async def serve_photo(file_path: str):
+    async def serve_photo(
+        file_path: str,
+        w: int = Query(1200, ge=100, le=3840),
+        q: int = Query(80, ge=10, le=100),
+    ):
         p = Path("/") / file_path
         if not _is_path_allowed(p):
             raise HTTPException(403, "Access denied")
         actual = _resolve_photo_path(str(p))
         if actual is None or not actual.exists():
             raise HTTPException(404, "Photo not found")
-        return FileResponse(actual, media_type="image/jpeg")
+        data = _compress_image(actual, max_size=w, quality=q)
+        return Response(
+            content=data,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     @app.post("/api/photos/{photo_id}/undo")
     async def undo_photo(photo_id: int):
