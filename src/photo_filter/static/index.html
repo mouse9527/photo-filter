@@ -76,10 +76,7 @@ header h1{font-size:18px;font-weight:600}
 .pagination button{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px}
 .pagination button:disabled{opacity:.3;cursor:not-allowed}
 .pagination button:hover:not(:disabled){border-color:#888}
-.toast{position:fixed;top:20%;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:20px;font-size:13px;z-index:2000;pointer-events:none;animation:toastFade 1.5s ease forwards}
-.toast.success{background:rgba(255,255,255,.12);color:#999}
-.toast.error{background:rgba(220,53,69,.2);color:#e88}
-@keyframes toastFade{0%{opacity:0;transform:translateX(-50%) translateY(6px)}10%{opacity:1;transform:translateX(-50%) translateY(0)}70%{opacity:1}100%{opacity:0}}
+.hint{color:#666;font-size:12px;transition:opacity .4s;margin-left:4px}
 </style>
 </head>
 <body>
@@ -98,7 +95,7 @@ header h1{font-size:18px;font-weight:600}
   </div>
   <div class="header-right">
     <button class="btn-select-all" id="selectAllBtn" onclick="toggleSelectAll()">全选</button>
-    <div class="stats" id="stats"></div>
+    <div class="stats" id="stats"></div><span class="hint" id="hint"></span>
   </div>
 </header>
 
@@ -192,7 +189,7 @@ async function loadPhotos() {
     }
 
     const grid = document.getElementById('grid');
-    data.items.forEach((p, i) => grid.appendChild(createCard(p, i)));
+    data.items.forEach(p => grid.appendChild(createCard(p)));
     updatePagination();
   } catch (e) {
     document.getElementById('loading').textContent = 'Failed to load photos.';
@@ -200,7 +197,7 @@ async function loadPhotos() {
   }
 }
 
-function createCard(photo, index) {
+function createCard(photo) {
   const card = document.createElement('div');
   card.className = 'card';
   card.id = 'card-' + photo.id;
@@ -212,7 +209,7 @@ function createCard(photo, index) {
   const date = photo.processed_at ? new Date(photo.processed_at).toLocaleDateString() : '';
 
   card.innerHTML = `
-    <div class="thumb" onclick="openOverlay(${index})">
+    <div class="thumb" onclick="openOverlayById(${photo.id})">
       ${thumbSrc ? `<img src="${esc(thumbSrc)}" loading="lazy" alt="${esc(photo.file_stem)}">` : ''}
       <span class="badge ${photo.status}">${photo.status}</span>
       <div class="card-check" onclick="event.stopPropagation();toggleSelect(${photo.id})" id="check-${photo.id}"></div>
@@ -294,9 +291,9 @@ async function batchUndo() {
     ids.forEach(id => removeCard(id));
     selectedIds.clear();
     updateBatchBar();
-    toast(`已恢复 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''), data.failed ? 'error' : 'success');
+    toast(`已恢复 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''));
   } catch (e) {
-    toast('批量恢复失败: ' + e.message, 'error');
+    toast('批量恢复失败');
   }
 }
 
@@ -313,9 +310,9 @@ async function batchDelete() {
     ids.forEach(id => removeCard(id));
     selectedIds.clear();
     updateBatchBar();
-    toast(`已删除 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''), data.failed ? 'error' : 'success');
+    toast(`已删除 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''));
   } catch (e) {
-    toast('批量删除失败: ' + e.message, 'error');
+    toast('批量删除失败');
   }
 }
 
@@ -324,9 +321,9 @@ async function undoPhoto(id) {
     const res = await fetch(`/api/photos/${id}/undo`, {method: 'POST'});
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     removeCard(id);
-    toast('Photo restored', 'success');
+    toast('已恢复');
   } catch (e) {
-    toast('Undo failed: ' + e.message, 'error');
+    toast('恢复失败');
   }
 }
 
@@ -335,9 +332,9 @@ async function deletePhoto(id) {
     const res = await fetch(`/api/photos/${id}/delete`, {method: 'POST'});
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     removeCard(id);
-    toast('Photo deleted', 'success');
+    toast('已删除');
   } catch (e) {
-    toast('Delete failed: ' + e.message, 'error');
+    toast('删除失败');
   }
 }
 
@@ -357,8 +354,9 @@ function removeCard(id) {
 
 // --- Overlay / Lightbox ---
 
-function openOverlay(index) {
-  if (index < 0 || index >= photoList.length) return;
+function openOverlayById(id) {
+  const index = photoList.findIndex(p => p.id === id);
+  if (index === -1) return;
   overlayIndex = index;
   updateOverlay();
   document.getElementById('overlay').classList.add('active');
@@ -400,12 +398,12 @@ async function overlayUndo() {
     const res = await fetch(`/api/photos/${photo.id}/undo`, {method: 'POST'});
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     removeCard(photo.id);
-    toast('Photo restored', 'success');
+    toast('已恢复');
     if (photoList.length === 0) { closeOverlay(); return; }
     if (overlayIndex >= photoList.length) overlayIndex = photoList.length - 1;
     updateOverlay();
   } catch (e) {
-    toast('Undo failed: ' + e.message, 'error');
+    toast('恢复失败');
   }
 }
 
@@ -416,12 +414,12 @@ async function overlayDelete() {
     const res = await fetch(`/api/photos/${photo.id}/delete`, {method: 'POST'});
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     removeCard(photo.id);
-    toast('Photo deleted', 'success');
+    toast('已删除');
     if (photoList.length === 0) { closeOverlay(); return; }
     if (overlayIndex >= photoList.length) overlayIndex = photoList.length - 1;
     updateOverlay();
   } catch (e) {
-    toast('Delete failed: ' + e.message, 'error');
+    toast('删除失败');
   }
 }
 
@@ -443,12 +441,13 @@ function nextPage() { currentOffset += PAGE_SIZE; loadPhotos(); }
 
 // --- Utils ---
 
-function toast(msg, type) {
-  const el = document.createElement('div');
-  el.className = 'toast ' + type;
+let hintTimer = 0;
+function toast(msg) {
+  const el = document.getElementById('hint');
   el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 1600);
+  el.style.opacity = '1';
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => { el.style.opacity = '0'; }, 1500);
 }
 
 function esc(s) {
