@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -26,6 +27,7 @@ from photo_filter.mover import delete_photo, undo_rejection
 logger = structlog.get_logger()
 
 STATIC_DIR = Path(__file__).parent / "static"
+CACHE_DIR = Path("/tmp/photo-cache")
 
 WARM_PRESETS = [
     (400, 60),
@@ -33,12 +35,18 @@ WARM_PRESETS = [
 ]
 
 
+def _cache_key_path(file_path: str, w: int, q: int) -> Path:
+    raw = f"{file_path}:{w}:{q}"
+    h = hashlib.md5(raw.encode()).hexdigest()
+    return CACHE_DIR / f"{h}.jpg"
+
+
 def create_app(config: AppConfig) -> FastAPI:
     app = FastAPI(title="Photo Filter Review")
     engine = make_engine(config.database.url)
     session_factory = make_session_factory(engine)
     photo_dirs = config.web.photo_dirs
-    image_cache: dict[tuple[str, int, int], bytes] = {}
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     def _resolve_photo_path(jpg_path: str | None) -> Path | None:
         if not jpg_path:
@@ -118,26 +126,27 @@ def create_app(config: AppConfig) -> FastAPI:
             return buf.getvalue()
 
     def _get_compressed(file_path: str, w: int, q: int) -> bytes | None:
-        key = (file_path, w, q)
-        if key in image_cache:
-            return image_cache[key]
+        cached = _cache_key_path(file_path, w, q)
+        if cached.exists():
+            return cached.read_bytes()
         actual = _resolve_photo_path(file_path)
         if actual is None or not actual.exists():
             return None
         data = _compress_image(actual, max_size=w, quality=q)
-        image_cache[key] = data
+        cached.write_bytes(data)
         return data
 
     def _warm_one(jpg_path: str) -> None:
         for w, q in WARM_PRESETS:
-            key = (jpg_path, w, q)
-            if key in image_cache:
+            cached = _cache_key_path(jpg_path, w, q)
+            if cached.exists():
                 continue
             actual = _resolve_photo_path(jpg_path)
             if actual is None or not actual.exists():
                 continue
             try:
-                image_cache[key] = _compress_image(actual, max_size=w, quality=q)
+                data = _compress_image(actual, max_size=w, quality=q)
+                cached.write_bytes(data)
             except Exception:
                 logger.debug("warm_cache_failed", path=jpg_path, w=w)
 
@@ -149,7 +158,9 @@ def create_app(config: AppConfig) -> FastAPI:
             )
         jpg_paths = [
             p.jpg_path for p in photos
-            if p.jpg_path and (p.jpg_path, WARM_PRESETS[0][0], WARM_PRESETS[0][1]) not in image_cache
+            if p.jpg_path and not _cache_key_path(
+                p.jpg_path, WARM_PRESETS[0][0], WARM_PRESETS[0][1],
+            ).exists()
         ]
         if not jpg_paths:
             return 0
@@ -158,7 +169,8 @@ def create_app(config: AppConfig) -> FastAPI:
         with ThreadPoolExecutor(max_workers=1) as pool:
             for path in jpg_paths:
                 await loop.run_in_executor(pool, _warm_one, path)
-        logger.info("cache_warm_done", cached=len(image_cache))
+        cached_count = sum(1 for _ in CACHE_DIR.iterdir())
+        logger.info("cache_warm_done", cached=cached_count)
         return len(jpg_paths)
 
     async def _warm_cache_loop() -> None:
