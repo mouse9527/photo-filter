@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from PIL import Image, ImageOps
 
@@ -257,5 +257,65 @@ def create_app(config: AppConfig) -> FastAPI:
             recycled=len(moved),
         )
         return {"status": "ok", "recycled": len(moved)}
+
+    async def _do_undo(photo_id: int) -> bool:
+        async with session_factory() as session:
+            record = await get_photo_by_id(session, photo_id)
+            if not record or record.status not in ("rejected", "review"):
+                return False
+            unit = PhotoUnit(
+                stem=record.file_stem,
+                source_dir=Path(record.source_dir),
+                camera=record.camera or "",
+                jpg_path=Path(record.jpg_path) if record.jpg_path else None,
+                arw_path=Path(record.arw_path) if record.arw_path else None,
+            )
+            try:
+                undo_rejection(unit)
+            except Exception:
+                return False
+            record.status = "kept"
+            record.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+        return True
+
+    async def _do_delete(photo_id: int) -> bool:
+        async with session_factory() as session:
+            record = await get_photo_by_id(session, photo_id)
+            if not record or record.status == "deleted":
+                return False
+            unit = PhotoUnit(
+                stem=record.file_stem,
+                source_dir=Path(record.source_dir),
+                camera=record.camera or "",
+                jpg_path=Path(record.jpg_path) if record.jpg_path else None,
+                arw_path=Path(record.arw_path) if record.arw_path else None,
+            )
+            try:
+                delete_photo(unit, photo_dirs)
+            except Exception:
+                return False
+            record.status = "deleted"
+            record.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+        return True
+
+    @app.post("/api/photos/batch/undo")
+    async def batch_undo(ids: list[int] = Body(..., embed=True)):
+        ok = 0
+        for pid in ids:
+            if await _do_undo(pid):
+                ok += 1
+        logger.info("batch_undo", total=len(ids), ok=ok)
+        return {"ok": ok, "failed": len(ids) - ok}
+
+    @app.post("/api/photos/batch/delete")
+    async def batch_delete(ids: list[int] = Body(..., embed=True)):
+        ok = 0
+        for pid in ids:
+            if await _do_delete(pid):
+                ok += 1
+        logger.info("batch_delete", total=len(ids), ok=ok)
+        return {"ok": ok, "failed": len(ids) - ok}
 
     return app

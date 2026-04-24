@@ -9,18 +9,26 @@
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#111;color:#eee;min-height:100vh}
 header{padding:16px 24px;background:#1a1a1a;border-bottom:1px solid #333;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 header h1{font-size:18px;font-weight:600}
+.header-right{display:flex;gap:8px;align-items:center}
 .filters{display:flex;gap:8px;align-items:center}
 .filters select{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;font-size:13px}
 .stats{font-size:13px;color:#888}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:24px}
-.card{background:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #2a2a2a;transition:border-color .2s}
+.btn-select-all{background:#333;color:#eee;border:1px solid #555;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+.btn-select-all:hover{border-color:#888}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:24px;padding-bottom:100px}
+.card{background:#1a1a1a;border-radius:10px;overflow:hidden;border:2px solid #2a2a2a;transition:border-color .2s;position:relative}
 .card:hover{border-color:#555}
+.card.selected{border-color:#4a9eff}
 .card .thumb{position:relative;aspect-ratio:3/2;overflow:hidden;cursor:pointer;background:#000}
 .card .thumb img{width:100%;height:100%;object-fit:cover;transition:transform .2s}
 .card .thumb:hover img{transform:scale(1.05)}
 .badge{position:absolute;top:8px;left:8px;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
 .badge.rejected{background:#dc3545;color:#fff}
 .badge.review{background:#fd7e14;color:#fff}
+.card-check{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:4px;border:2px solid rgba(255,255,255,.6);background:rgba(0,0,0,.4);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;transition:all .15s}
+.card-check:hover{border-color:#fff;background:rgba(0,0,0,.6)}
+.card-check.checked{background:#4a9eff;border-color:#4a9eff}
+.card-check.checked::after{content:'\2713';color:#fff;font-size:14px;font-weight:700}
 .card .info{padding:12px}
 .card .info .name{font-size:14px;font-weight:500;margin-bottom:4px}
 .card .info .meta{font-size:12px;color:#888;margin-bottom:6px}
@@ -32,16 +40,43 @@ header h1{font-size:18px;font-weight:600}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn-undo{background:#198754;color:#fff}
 .btn-delete{background:#dc3545;color:#fff}
-.overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);z-index:1000;cursor:zoom-out;align-items:center;justify-content:center}
+
+.batch-bar{position:fixed;bottom:0;left:0;right:0;background:#1a1a1a;border-top:1px solid #333;padding:12px 24px;display:none;align-items:center;justify-content:space-between;z-index:900;gap:12px}
+.batch-bar.active{display:flex}
+.batch-bar .batch-info{font-size:14px;color:#ccc}
+.batch-bar .batch-actions{display:flex;gap:8px}
+.batch-bar .batch-actions button{padding:8px 16px;border:none;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer}
+.batch-btn-undo{background:#198754;color:#fff}
+.batch-btn-delete{background:#dc3545;color:#fff}
+.batch-btn-cancel{background:#444;color:#eee}
+
+.overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.95);z-index:1000;flex-direction:column}
 .overlay.active{display:flex}
-.overlay img{max-width:95%;max-height:95%;object-fit:contain}
+.overlay-main{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:0}
+.overlay-main img{max-width:90%;max-height:100%;object-fit:contain}
+.overlay-nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:24px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.overlay-nav:hover{background:rgba(255,255,255,.25)}
+.overlay-nav:disabled{opacity:.2;cursor:default}
+.overlay-nav.prev{left:16px}
+.overlay-nav.next{right:16px}
+.overlay-close{position:absolute;top:16px;right:16px;width:36px;height:36px;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:20px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.overlay-close:hover{background:rgba(255,255,255,.25)}
+.overlay-bottom{background:#1a1a1a;border-top:1px solid #333;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0}
+.overlay-info{flex:1;min-width:0}
+.overlay-info .ov-name{font-size:15px;font-weight:500;margin-bottom:4px}
+.overlay-info .ov-meta{font-size:12px;color:#888;margin-bottom:4px}
+.overlay-info .ov-reasons{font-size:12px;color:#aaa}
+.overlay-info .ov-reasons span{display:inline-block;background:#2a2a2a;padding:2px 6px;border-radius:3px;margin:2px 2px 2px 0}
+.overlay-actions{display:flex;gap:8px;flex-shrink:0}
+.overlay-actions button{padding:8px 20px;border:none;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer}
+
 .empty{text-align:center;padding:80px 24px;color:#666;font-size:16px}
 .loading{text-align:center;padding:40px;color:#666}
 .pagination{display:flex;justify-content:center;gap:8px;padding:24px}
 .pagination button{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px}
 .pagination button:disabled{opacity:.3;cursor:not-allowed}
 .pagination button:hover:not(:disabled){border-color:#888}
-.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:14px;z-index:2000;animation:fadeInUp .3s}
+.toast{position:fixed;bottom:80px;right:24px;padding:12px 20px;border-radius:8px;font-size:14px;z-index:2000;animation:fadeInUp .3s}
 .toast.success{background:#198754;color:#fff}
 .toast.error{background:#dc3545;color:#fff}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -61,7 +96,10 @@ header h1{font-size:18px;font-weight:600}
       <option value="">All Cameras</option>
     </select>
   </div>
-  <div class="stats" id="stats"></div>
+  <div class="header-right">
+    <button class="btn-select-all" id="selectAllBtn" onclick="toggleSelectAll()">全选</button>
+    <div class="stats" id="stats"></div>
+  </div>
 </header>
 
 <div id="grid" class="grid"></div>
@@ -74,14 +112,42 @@ header h1{font-size:18px;font-weight:600}
   <button id="nextBtn" onclick="nextPage()">Next</button>
 </div>
 
-<div class="overlay" id="overlay" onclick="closeOverlay()">
-  <img id="overlayImg" src="" alt="">
+<div class="batch-bar" id="batchBar">
+  <div class="batch-info" id="batchInfo"></div>
+  <div class="batch-actions">
+    <button class="batch-btn-undo" onclick="batchUndo()">批量恢复</button>
+    <button class="batch-btn-delete" onclick="batchDelete()">批量删除</button>
+    <button class="batch-btn-cancel" onclick="clearSelection()">取消选择</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="overlay-main">
+    <button class="overlay-close" onclick="closeOverlay()">&times;</button>
+    <button class="overlay-nav prev" id="ovPrev" onclick="overlayPrev()">&lsaquo;</button>
+    <img id="overlayImg" src="" alt="">
+    <button class="overlay-nav next" id="ovNext" onclick="overlayNext()">&rsaquo;</button>
+  </div>
+  <div class="overlay-bottom">
+    <div class="overlay-info">
+      <div class="ov-name" id="ovName"></div>
+      <div class="ov-meta" id="ovMeta"></div>
+      <div class="ov-reasons" id="ovReasons"></div>
+    </div>
+    <div class="overlay-actions">
+      <button class="btn-undo" onclick="overlayUndo()">恢复</button>
+      <button class="btn-delete" onclick="overlayDelete()">删除</button>
+    </div>
+  </div>
 </div>
 
 <script>
 const PAGE_SIZE = 50;
 let currentOffset = 0;
 let totalPhotos = 0;
+let photoList = [];
+let selectedIds = new Set();
+let overlayIndex = -1;
 
 async function loadCameras() {
   try {
@@ -107,11 +173,14 @@ async function loadPhotos() {
   document.getElementById('loading').style.display = 'block';
   document.getElementById('grid').innerHTML = '';
   document.getElementById('empty').style.display = 'none';
+  selectedIds.clear();
+  updateBatchBar();
 
   try {
     const res = await fetch('/api/photos?' + params);
     const data = await res.json();
     totalPhotos = data.total;
+    photoList = data.items;
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('stats').textContent = `${totalPhotos} photos`;
@@ -123,7 +192,7 @@ async function loadPhotos() {
     }
 
     const grid = document.getElementById('grid');
-    data.items.forEach(p => grid.appendChild(createCard(p)));
+    data.items.forEach((p, i) => grid.appendChild(createCard(p, i)));
     updatePagination();
   } catch (e) {
     document.getElementById('loading').textContent = 'Failed to load photos.';
@@ -131,22 +200,22 @@ async function loadPhotos() {
   }
 }
 
-function createCard(photo) {
+function createCard(photo, index) {
   const card = document.createElement('div');
   card.className = 'card';
   card.id = 'card-' + photo.id;
 
   const baseSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
   const thumbSrc = baseSrc ? baseSrc + '?w=400&q=60' : '';
-  const fullSrc = baseSrc ? baseSrc + '?w=1440&q=80' : '';
   const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
   const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
   const date = photo.processed_at ? new Date(photo.processed_at).toLocaleDateString() : '';
 
   card.innerHTML = `
-    <div class="thumb" onclick="openOverlay('${esc(fullSrc)}')">
+    <div class="thumb" onclick="openOverlay(${index})">
       ${thumbSrc ? `<img src="${esc(thumbSrc)}" loading="lazy" alt="${esc(photo.file_stem)}">` : ''}
       <span class="badge ${photo.status}">${photo.status}</span>
+      <div class="card-check" onclick="event.stopPropagation();toggleSelect(${photo.id})" id="check-${photo.id}"></div>
     </div>
     <div class="info">
       <div class="name">${esc(photo.file_stem)}</div>
@@ -161,10 +230,96 @@ function createCard(photo) {
   return card;
 }
 
+function toggleSelect(id) {
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+  } else {
+    selectedIds.add(id);
+  }
+  const check = document.getElementById('check-' + id);
+  const card = document.getElementById('card-' + id);
+  if (check) check.classList.toggle('checked', selectedIds.has(id));
+  if (card) card.classList.toggle('selected', selectedIds.has(id));
+  updateBatchBar();
+}
+
+function toggleSelectAll() {
+  if (selectedIds.size === photoList.length) {
+    clearSelection();
+  } else {
+    photoList.forEach(p => {
+      selectedIds.add(p.id);
+      const check = document.getElementById('check-' + p.id);
+      const card = document.getElementById('card-' + p.id);
+      if (check) check.classList.add('checked');
+      if (card) card.classList.add('selected');
+    });
+    updateBatchBar();
+  }
+}
+
+function clearSelection() {
+  selectedIds.forEach(id => {
+    const check = document.getElementById('check-' + id);
+    const card = document.getElementById('card-' + id);
+    if (check) check.classList.remove('checked');
+    if (card) card.classList.remove('selected');
+  });
+  selectedIds.clear();
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const bar = document.getElementById('batchBar');
+  if (selectedIds.size > 0) {
+    bar.classList.add('active');
+    document.getElementById('batchInfo').textContent = `已选 ${selectedIds.size} 张`;
+  } else {
+    bar.classList.remove('active');
+  }
+  document.getElementById('selectAllBtn').textContent =
+    selectedIds.size === photoList.length && photoList.length > 0 ? '取消全选' : '全选';
+}
+
+async function batchUndo() {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  try {
+    const res = await fetch('/api/photos/batch/undo', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ids}),
+    });
+    const data = await res.json();
+    ids.forEach(id => removeCard(id));
+    selectedIds.clear();
+    updateBatchBar();
+    toast(`已恢复 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''), data.failed ? 'error' : 'success');
+  } catch (e) {
+    toast('批量恢复失败: ' + e.message, 'error');
+  }
+}
+
+async function batchDelete() {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  try {
+    const res = await fetch('/api/photos/batch/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ids}),
+    });
+    const data = await res.json();
+    ids.forEach(id => removeCard(id));
+    selectedIds.clear();
+    updateBatchBar();
+    toast(`已删除 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''), data.failed ? 'error' : 'success');
+  } catch (e) {
+    toast('批量删除失败: ' + e.message, 'error');
+  }
+}
+
 async function undoPhoto(id) {
-  if (!confirm('Restore this photo to its original location?')) return;
-  const btn = event.target;
-  btn.disabled = true;
   try {
     const res = await fetch(`/api/photos/${id}/undo`, {method: 'POST'});
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
@@ -172,14 +327,10 @@ async function undoPhoto(id) {
     toast('Photo restored', 'success');
   } catch (e) {
     toast('Undo failed: ' + e.message, 'error');
-    btn.disabled = false;
   }
 }
 
 async function deletePhoto(id) {
-  if (!confirm('Move this photo to recycle bin?')) return;
-  const btn = event.target;
-  btn.disabled = true;
   try {
     const res = await fetch(`/api/photos/${id}/delete`, {method: 'POST'});
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
@@ -187,7 +338,6 @@ async function deletePhoto(id) {
     toast('Photo deleted', 'success');
   } catch (e) {
     toast('Delete failed: ' + e.message, 'error');
-    btn.disabled = false;
   }
 }
 
@@ -198,20 +348,84 @@ function removeCard(id) {
     card.style.opacity = '0';
     setTimeout(() => card.remove(), 300);
   }
+  selectedIds.delete(id);
+  const idx = photoList.findIndex(p => p.id === id);
+  if (idx !== -1) photoList.splice(idx, 1);
   totalPhotos--;
   document.getElementById('stats').textContent = `${totalPhotos} photos`;
 }
 
-function openOverlay(src) {
-  if (!src) return;
-  document.getElementById('overlayImg').src = src;
+// --- Overlay / Lightbox ---
+
+function openOverlay(index) {
+  if (index < 0 || index >= photoList.length) return;
+  overlayIndex = index;
+  updateOverlay();
   document.getElementById('overlay').classList.add('active');
 }
 
 function closeOverlay() {
   document.getElementById('overlay').classList.remove('active');
   document.getElementById('overlayImg').src = '';
+  overlayIndex = -1;
 }
+
+function updateOverlay() {
+  const photo = photoList[overlayIndex];
+  if (!photo) { closeOverlay(); return; }
+  const baseSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
+  const fullSrc = baseSrc ? baseSrc + '?w=1440&q=80' : '';
+  document.getElementById('overlayImg').src = fullSrc;
+  document.getElementById('ovName').textContent = photo.file_stem;
+  const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
+  document.getElementById('ovMeta').textContent = `${photo.camera || ''} · ${conf} · ${photo.status}`;
+  const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
+  document.getElementById('ovReasons').innerHTML = reasons;
+  document.getElementById('ovPrev').disabled = overlayIndex <= 0;
+  document.getElementById('ovNext').disabled = overlayIndex >= photoList.length - 1;
+}
+
+function overlayPrev() {
+  if (overlayIndex > 0) { overlayIndex--; updateOverlay(); }
+}
+
+function overlayNext() {
+  if (overlayIndex < photoList.length - 1) { overlayIndex++; updateOverlay(); }
+}
+
+async function overlayUndo() {
+  const photo = photoList[overlayIndex];
+  if (!photo) return;
+  try {
+    const res = await fetch(`/api/photos/${photo.id}/undo`, {method: 'POST'});
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    removeCard(photo.id);
+    toast('Photo restored', 'success');
+    if (photoList.length === 0) { closeOverlay(); return; }
+    if (overlayIndex >= photoList.length) overlayIndex = photoList.length - 1;
+    updateOverlay();
+  } catch (e) {
+    toast('Undo failed: ' + e.message, 'error');
+  }
+}
+
+async function overlayDelete() {
+  const photo = photoList[overlayIndex];
+  if (!photo) return;
+  try {
+    const res = await fetch(`/api/photos/${photo.id}/delete`, {method: 'POST'});
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    removeCard(photo.id);
+    toast('Photo deleted', 'success');
+    if (photoList.length === 0) { closeOverlay(); return; }
+    if (overlayIndex >= photoList.length) overlayIndex = photoList.length - 1;
+    updateOverlay();
+  } catch (e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+// --- Pagination ---
 
 function updatePagination() {
   const pag = document.getElementById('pagination');
@@ -227,6 +441,8 @@ function updatePagination() {
 function prevPage() { currentOffset = Math.max(0, currentOffset - PAGE_SIZE); loadPhotos(); }
 function nextPage() { currentOffset += PAGE_SIZE; loadPhotos(); }
 
+// --- Utils ---
+
 function toast(msg, type) {
   const el = document.createElement('div');
   el.className = 'toast ' + type;
@@ -241,9 +457,17 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// --- Events ---
+
 document.getElementById('filterStatus').addEventListener('change', () => { currentOffset = 0; loadPhotos(); });
 document.getElementById('filterCamera').addEventListener('change', () => { currentOffset = 0; loadPhotos(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
+document.addEventListener('keydown', e => {
+  if (document.getElementById('overlay').classList.contains('active')) {
+    if (e.key === 'Escape') closeOverlay();
+    else if (e.key === 'ArrowLeft') overlayPrev();
+    else if (e.key === 'ArrowRight') overlayNext();
+  }
+});
 
 loadCameras();
 loadPhotos();
