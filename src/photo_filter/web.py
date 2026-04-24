@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -25,12 +27,18 @@ logger = structlog.get_logger()
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+WARM_PRESETS = [
+    (400, 60),
+    (1920, 85),
+]
+
 
 def create_app(config: AppConfig) -> FastAPI:
     app = FastAPI(title="Photo Filter Review")
     engine = make_engine(config.database.url)
     session_factory = make_session_factory(engine)
     photo_dirs = config.web.photo_dirs
+    image_cache: dict[tuple[str, int, int], bytes] = {}
 
     def _resolve_photo_path(jpg_path: str | None) -> Path | None:
         if not jpg_path:
@@ -108,6 +116,52 @@ def create_app(config: AppConfig) -> FastAPI:
             img.save(buf, format="JPEG", quality=quality)
             return buf.getvalue()
 
+    def _get_compressed(file_path: str, w: int, q: int) -> bytes | None:
+        key = (file_path, w, q)
+        if key in image_cache:
+            return image_cache[key]
+        actual = _resolve_photo_path(file_path)
+        if actual is None or not actual.exists():
+            return None
+        data = _compress_image(actual, max_size=w, quality=q)
+        image_cache[key] = data
+        return data
+
+    def _warm_one(jpg_path: str) -> None:
+        for w, q in WARM_PRESETS:
+            key = (jpg_path, w, q)
+            if key in image_cache:
+                continue
+            actual = _resolve_photo_path(jpg_path)
+            if actual is None or not actual.exists():
+                continue
+            try:
+                image_cache[key] = _compress_image(actual, max_size=w, quality=q)
+            except Exception:
+                logger.debug("warm_cache_failed", path=jpg_path, w=w)
+
+    async def _warm_cache() -> None:
+        async with session_factory() as session:
+            photos, total = await get_review_photos(
+                session, status=None, camera=None,
+                limit=5000, offset=0,
+            )
+        jpg_paths = [p.jpg_path for p in photos if p.jpg_path]
+        if not jpg_paths:
+            return
+        logger.info("cache_warm_start", count=len(jpg_paths))
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            await asyncio.gather(*[
+                loop.run_in_executor(pool, _warm_one, path)
+                for path in jpg_paths
+            ])
+        logger.info("cache_warm_done", cached=len(image_cache))
+
+    @app.on_event("startup")
+    async def startup_warm_cache():
+        asyncio.create_task(_warm_cache())
+
     @app.get("/photos/{file_path:path}")
     async def serve_photo(
         file_path: str,
@@ -117,10 +171,9 @@ def create_app(config: AppConfig) -> FastAPI:
         p = Path("/") / file_path
         if not _is_path_allowed(p):
             raise HTTPException(403, "Access denied")
-        actual = _resolve_photo_path(str(p))
-        if actual is None or not actual.exists():
+        data = _get_compressed(str(p), w, q)
+        if data is None:
             raise HTTPException(404, "Photo not found")
-        data = _compress_image(actual, max_size=w, quality=q)
         return Response(
             content=data,
             media_type="image/jpeg",
