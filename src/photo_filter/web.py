@@ -141,25 +141,40 @@ def create_app(config: AppConfig) -> FastAPI:
             except Exception:
                 logger.debug("warm_cache_failed", path=jpg_path, w=w)
 
-    async def _warm_cache() -> None:
+    async def _warm_cache() -> int:
         async with session_factory() as session:
             photos, total = await get_review_photos(
                 session, status=None, camera=None,
                 limit=5000, offset=0,
             )
-        jpg_paths = [p.jpg_path for p in photos if p.jpg_path]
+        jpg_paths = [
+            p.jpg_path for p in photos
+            if p.jpg_path and (p.jpg_path, WARM_PRESETS[0][0], WARM_PRESETS[0][1]) not in image_cache
+        ]
         if not jpg_paths:
-            return
-        logger.info("cache_warm_start", count=len(jpg_paths))
+            return 0
+        logger.info("cache_warm_start", new=len(jpg_paths), total=total)
         loop = asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=1) as pool:
             for path in jpg_paths:
                 await loop.run_in_executor(pool, _warm_one, path)
         logger.info("cache_warm_done", cached=len(image_cache))
+        return len(jpg_paths)
+
+    async def _warm_cache_loop() -> None:
+        await _warm_cache()
+        while True:
+            await asyncio.sleep(600)
+            try:
+                warmed = await _warm_cache()
+                if warmed > 0:
+                    logger.info("cache_warm_periodic", new=warmed)
+            except Exception:
+                logger.exception("cache_warm_periodic_error")
 
     @app.on_event("startup")
     async def startup_warm_cache():
-        asyncio.create_task(_warm_cache())
+        asyncio.create_task(_warm_cache_loop())
 
     @app.get("/photos/{file_path:path}")
     async def serve_photo(
