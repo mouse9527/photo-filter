@@ -114,6 +114,10 @@ def scan_source(
             continue
         units.append(unit)
 
+    unit_counts: dict[str, int] = defaultdict(int)
+    for unit in units:
+        unit_counts[str(unit.source_dir)] += 1
+
     units.sort(key=lambda u: (str(u.source_dir), u.stem))
     logger.info(
         "scan_complete",
@@ -121,7 +125,7 @@ def scan_source(
         camera=source.camera,
         found=len(units),
     )
-    return units, dir_counts
+    return units, dict(unit_counts)
 
 
 def filter_unprocessed(

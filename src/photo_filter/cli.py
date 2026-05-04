@@ -81,28 +81,29 @@ async def _process_one(
                 status = "kept"
                 counters["kept"] += 1
 
-            record = PhotoRecord(
-                file_stem=unit.stem,
-                source_dir=str(unit.source_dir),
-                file_hash=unit.file_hash,
-                jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
-                arw_path=str(unit.arw_path) if unit.arw_path else None,
-                camera=unit.camera,
-                status=status,
-                confidence=result.confidence,
-                verdict_reasons=json.dumps(result.reasons),
-                llm_model=config.llm.model,
-                llm_response=result.raw_response,
-                file_size_bytes=(
-                    unit.analysis_path.stat().st_size
-                    if unit.analysis_path and unit.analysis_path.exists()
-                    else None
-                ),
-                processed_at=now,
-            )
-            async with session_factory() as session:
-                await upsert_record(session, record)
-                await session.commit()
+            if not dry_run:
+                record = PhotoRecord(
+                    file_stem=unit.stem,
+                    source_dir=str(unit.source_dir),
+                    file_hash=unit.file_hash,
+                    jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
+                    arw_path=str(unit.arw_path) if unit.arw_path else None,
+                    camera=unit.camera,
+                    status=status,
+                    confidence=result.confidence,
+                    verdict_reasons=json.dumps(result.reasons),
+                    llm_model=config.llm.model,
+                    llm_response=result.raw_response,
+                    file_size_bytes=(
+                        unit.analysis_path.stat().st_size
+                        if unit.analysis_path and unit.analysis_path.exists()
+                        else None
+                    ),
+                    processed_at=now,
+                )
+                async with session_factory() as session:
+                    await upsert_record(session, record)
+                    await session.commit()
             counters["analyzed"] += 1
             results.append({
                 "stem": unit.stem,
@@ -123,19 +124,20 @@ async def _process_one(
 
         except Exception as exc:
             logger.exception("analysis_failed", stem=unit.stem)
-            async with session_factory() as session:
-                record = PhotoRecord(
-                    file_stem=unit.stem,
-                    source_dir=str(unit.source_dir),
-                    file_hash=unit.file_hash,
-                    jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
-                    arw_path=str(unit.arw_path) if unit.arw_path else None,
-                    camera=unit.camera,
-                    status="error",
-                    processed_at=datetime.now(timezone.utc),
-                )
-                await upsert_record(session, record)
-                await session.commit()
+            if not dry_run:
+                async with session_factory() as session:
+                    record = PhotoRecord(
+                        file_stem=unit.stem,
+                        source_dir=str(unit.source_dir),
+                        file_hash=unit.file_hash,
+                        jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
+                        arw_path=str(unit.arw_path) if unit.arw_path else None,
+                        camera=unit.camera,
+                        status="error",
+                        processed_at=datetime.now(timezone.utc),
+                    )
+                    await upsert_record(session, record)
+                    await session.commit()
             counters["errors"] += 1
             results.append({
                 "stem": unit.stem,
@@ -208,13 +210,16 @@ async def _scan(
                 unprocessed=len(unprocessed),
             )
 
-            async with session_factory() as session:
-                daily_count = await get_daily_count(session)
-                remaining = max(0, daily_max - daily_count)
+            if dry_run:
+                remaining = daily_max - counters["analyzed"]
+            else:
+                async with session_factory() as session:
+                    daily_count = await get_daily_count(session)
+                    remaining = max(0, daily_max - daily_count)
 
-                if remaining == 0:
-                    logger.info("daily_quota_reached", daily_max=daily_max)
-                    break
+            if remaining <= 0:
+                logger.info("daily_quota_reached", daily_max=daily_max)
+                break
 
             batch = unprocessed[:remaining]
             logger.info(
@@ -233,19 +238,20 @@ async def _scan(
             ]
             await asyncio.gather(*tasks)
 
-            affected_dirs = {str(u.source_dir) for u in batch}
-            async with session_factory() as session:
-                for dir_path in affected_dirs:
-                    expected = dir_counts.get(dir_path, 0)
-                    if expected == 0:
-                        continue
-                    actual = await count_processed_in_dir(session, dir_path)
-                    completed = actual >= expected
-                    await upsert_scanned_dir(
-                        session, dir_path, source.camera,
-                        expected, completed,
-                    )
-                await session.commit()
+            if not dry_run:
+                affected_dirs = {str(u.source_dir) for u in batch}
+                async with session_factory() as session:
+                    for dir_path in affected_dirs:
+                        expected = dir_counts.get(dir_path, 0)
+                        if expected == 0:
+                            continue
+                        actual = await count_processed_in_dir(session, dir_path)
+                        completed = actual >= expected
+                        await upsert_scanned_dir(
+                            session, dir_path, source.camera,
+                            expected, completed,
+                        )
+                    await session.commit()
     finally:
         await engine.dispose()
 
