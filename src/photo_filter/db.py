@@ -156,7 +156,10 @@ async def get_review_photos(
         count_query = count_query.where(PhotoRecord.camera == camera)
 
     total = (await session.execute(count_query)).scalar_one()
-    query = query.order_by(PhotoRecord.processed_at.desc())
+    query = query.order_by(
+        PhotoRecord.source_dir.desc(),
+        PhotoRecord.file_stem.desc(),
+    )
     query = query.offset(offset).limit(limit)
     result = await session.execute(query)
     return list(result.scalars().all()), total
