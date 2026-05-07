@@ -55,10 +55,11 @@ async def _process_one(
     from photo_filter.db import PhotoRecord, upsert_record
     from photo_filter.models import Verdict
     from photo_filter.mover import reject_photo
-    from photo_filter.scanner import compute_sha256
+    from photo_filter.scanner import compute_sha256, extract_capture_time
 
     async with semaphore:
         try:
+            capture_time = extract_capture_time(unit)
             if unit.analysis_path:
                 unit.file_hash = compute_sha256(unit.analysis_path)
 
@@ -99,6 +100,7 @@ async def _process_one(
                         if unit.analysis_path and unit.analysis_path.exists()
                         else None
                     ),
+                    capture_time=capture_time,
                     processed_at=now,
                 )
                 async with session_factory() as session:
@@ -134,6 +136,7 @@ async def _process_one(
                         arw_path=str(unit.arw_path) if unit.arw_path else None,
                         camera=unit.camera,
                         status="error",
+                        capture_time=capture_time,
                         processed_at=datetime.now(timezone.utc),
                     )
                     await upsert_record(session, record)
@@ -379,6 +382,7 @@ async def _retry_one(
     from photo_filter.analyzer import analyze_photo
     from photo_filter.models import PhotoUnit, Verdict
     from photo_filter.mover import reject_photo
+    from photo_filter.scanner import extract_capture_time
 
     unit = PhotoUnit(
         stem=record.file_stem,
@@ -401,6 +405,7 @@ async def _retry_one(
 
     async with semaphore:
         try:
+            capture_time = extract_capture_time(unit)
             result = await analyze_photo(unit, client, config)
             now = datetime.now(timezone.utc)
             should_reject = (
@@ -426,6 +431,7 @@ async def _retry_one(
                     existing.verdict_reasons = json.dumps(result.reasons)
                     existing.llm_model = config.llm.model
                     existing.llm_response = result.raw_response
+                    existing.capture_time = capture_time
                     existing.processed_at = now
                     await session.commit()
             counters["retried"] += 1
@@ -513,3 +519,57 @@ async def _retry_errors(config, dry_run: bool, report_path: str | None, no_repor
         )
         written = write_report(report, path)
         click.echo(f"Report: {written}")
+
+
+@main.command(name="backfill-capture-time")
+@click.option("--limit", type=int, default=1000, help="Maximum records to update.")
+@click.option("--dry-run", is_flag=True, help="Show count without updating DB.")
+@click.pass_context
+def backfill_capture_time_cmd(
+    ctx: click.Context, limit: int, dry_run: bool,
+) -> None:
+    """Backfill EXIF capture time for existing records."""
+    asyncio.run(_backfill_capture_time(ctx.obj["config"], limit, dry_run))
+
+
+async def _backfill_capture_time(config, limit: int, dry_run: bool) -> None:
+    from photo_filter.db import (
+        get_records_missing_capture_time,
+        make_engine,
+        make_session_factory,
+    )
+    from photo_filter.models import PhotoUnit
+    from photo_filter.scanner import extract_capture_time
+
+    engine = make_engine(config.database.url)
+    session_factory = make_session_factory(engine)
+    updated = 0
+    missing = 0
+    records = []
+    try:
+        async with session_factory() as session:
+            records = await get_records_missing_capture_time(session, limit)
+            for record in records:
+                unit = PhotoUnit(
+                    stem=record.file_stem,
+                    source_dir=Path(record.source_dir),
+                    camera=record.camera or "",
+                    jpg_path=Path(record.jpg_path) if record.jpg_path else None,
+                    arw_path=Path(record.arw_path) if record.arw_path else None,
+                )
+                capture_time = extract_capture_time(unit)
+                if capture_time is None:
+                    missing += 1
+                    continue
+                if not dry_run:
+                    record.capture_time = capture_time
+                updated += 1
+            if not dry_run:
+                await session.commit()
+    finally:
+        await engine.dispose()
+
+    click.echo(
+        f"Capture time backfill: {updated} updated, {missing} missing, "
+        f"{len(records)} checked"
+    )

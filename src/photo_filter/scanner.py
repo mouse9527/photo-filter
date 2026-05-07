@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import structlog
+from PIL import Image
 
 from photo_filter.config import SourceConfig
 from photo_filter.models import PhotoUnit
@@ -23,6 +25,54 @@ def compute_sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _parse_exif_datetime(value, offset_value=None) -> datetime | None:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    if not value:
+        return None
+    try:
+        dt = datetime.strptime(str(value).strip(), "%Y:%m:%d %H:%M:%S")
+    except ValueError:
+        return None
+    tz = timezone.utc
+    if offset_value:
+        if isinstance(offset_value, bytes):
+            offset_value = offset_value.decode("utf-8", errors="ignore")
+        offset = str(offset_value).strip()
+        sign = 1 if offset.startswith("+") else -1
+        try:
+            hours, minutes = offset[1:].split(":", 1)
+            tz = timezone(sign * timedelta(
+                hours=int(hours), minutes=int(minutes),
+            ))
+        except (ValueError, IndexError):
+            pass
+    return dt.replace(tzinfo=tz)
+
+
+def extract_capture_time(unit: PhotoUnit) -> datetime | None:
+    if not unit.analysis_path:
+        return None
+    try:
+        with Image.open(unit.analysis_path) as img:
+            exif = img.getexif()
+            if not exif:
+                return None
+            for tag, offset_tag in (
+                (36867, 36881),
+                (36868, 36882),
+                (306, 36880),
+            ):
+                parsed = _parse_exif_datetime(
+                    exif.get(tag), exif.get(offset_tag),
+                )
+                if parsed:
+                    return parsed
+    except Exception:
+        logger.debug("capture_time_extract_failed", stem=unit.stem)
+    return None
 
 
 def _should_skip_dir(dir_path: Path) -> bool:

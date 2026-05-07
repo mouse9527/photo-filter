@@ -101,6 +101,9 @@ def create_app(config: AppConfig) -> FastAPI:
                 "status": p.status,
                 "confidence": p.confidence,
                 "reasons": reasons,
+                "capture_time": (
+                    p.capture_time.isoformat() if p.capture_time else None
+                ),
                 "processed_at": (
                     p.processed_at.isoformat() if p.processed_at else None
                 ),

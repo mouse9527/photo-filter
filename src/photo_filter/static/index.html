@@ -74,6 +74,7 @@ header h1{font-size:18px;font-weight:600}
 .loading{text-align:center;padding:40px;color:#666}
 .pagination{display:flex;justify-content:center;gap:8px;padding:24px}
 .pagination button{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px}
+.pagination input{width:64px;background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:8px;text-align:center;font-size:13px}
 .pagination button:disabled{opacity:.3;cursor:not-allowed}
 .pagination button:hover:not(:disabled){border-color:#888}
 .hint{color:#666;font-size:12px;transition:opacity .4s;margin-left:4px}
@@ -106,6 +107,8 @@ header h1{font-size:18px;font-weight:600}
 <div class="pagination" id="pagination" style="display:none">
   <button id="prevBtn" onclick="prevPage()">Previous</button>
   <span id="pageInfo" style="padding:8px;color:#888;font-size:13px"></span>
+  <input id="pageJump" type="number" min="1" value="1">
+  <button id="jumpBtn" onclick="jumpToPage()">Go</button>
   <button id="nextBtn" onclick="nextPage()">Next</button>
 </div>
 
@@ -206,7 +209,8 @@ function createCard(photo) {
   const thumbSrc = baseSrc ? baseSrc + '?w=400&q=60' : '';
   const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
   const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
-  const date = photo.processed_at ? new Date(photo.processed_at).toLocaleDateString() : '';
+  const dateSource = photo.capture_time || photo.processed_at;
+  const date = dateSource ? new Date(dateSource).toLocaleDateString() : '';
 
   card.innerHTML = `
     <div class="thumb" onclick="openOverlayById(${photo.id})">
@@ -376,7 +380,9 @@ function updateOverlay() {
   document.getElementById('overlayImg').src = fullSrc;
   document.getElementById('ovName').textContent = photo.file_stem;
   const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
-  document.getElementById('ovMeta').textContent = `${photo.camera || ''} · ${conf} · ${photo.status}`;
+  const dateSource = photo.capture_time || photo.processed_at;
+  const date = dateSource ? new Date(dateSource).toLocaleDateString() : '';
+  document.getElementById('ovMeta').textContent = `${photo.camera || ''} · ${conf} · ${date} · ${photo.status}`;
   const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
   document.getElementById('ovReasons').innerHTML = reasons;
   document.getElementById('ovPrev').disabled = overlayIndex <= 0;
@@ -425,15 +431,31 @@ async function overlayDelete() {
 
 // --- Pagination ---
 
+function pageCount() {
+  return Math.max(1, Math.ceil(totalPhotos / PAGE_SIZE));
+}
+
 function updatePagination() {
   const pag = document.getElementById('pagination');
   if (totalPhotos <= PAGE_SIZE) { pag.style.display = 'none'; return; }
   pag.style.display = 'flex';
   const page = Math.floor(currentOffset / PAGE_SIZE) + 1;
-  const pages = Math.ceil(totalPhotos / PAGE_SIZE);
+  const pages = pageCount();
   document.getElementById('pageInfo').textContent = `${page} / ${pages}`;
+  const jump = document.getElementById('pageJump');
+  jump.max = pages;
+  jump.value = page;
   document.getElementById('prevBtn').disabled = currentOffset === 0;
   document.getElementById('nextBtn').disabled = currentOffset + PAGE_SIZE >= totalPhotos;
+}
+
+function jumpToPage() {
+  const input = document.getElementById('pageJump');
+  let page = parseInt(input.value, 10);
+  if (!Number.isFinite(page)) return;
+  page = Math.min(Math.max(page, 1), pageCount());
+  currentOffset = (page - 1) * PAGE_SIZE;
+  loadPhotos();
 }
 
 function prevPage() { currentOffset = Math.max(0, currentOffset - PAGE_SIZE); loadPhotos(); }
@@ -460,6 +482,7 @@ function esc(s) {
 
 document.getElementById('filterStatus').addEventListener('change', () => { currentOffset = 0; loadPhotos(); });
 document.getElementById('filterCamera').addEventListener('change', () => { currentOffset = 0; loadPhotos(); });
+document.getElementById('pageJump').addEventListener('keydown', e => { if (e.key === 'Enter') jumpToPage(); });
 document.addEventListener('keydown', e => {
   if (document.getElementById('overlay').classList.contains('active')) {
     if (e.key === 'Escape') closeOverlay();

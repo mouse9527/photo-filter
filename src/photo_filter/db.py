@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     select,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -30,6 +31,7 @@ class PhotoRecord(Base):
         Index("idx_photo_records_status", "status"),
         Index("idx_photo_records_source_dir", "source_dir"),
         Index("idx_photo_records_processed_at", "processed_at"),
+        Index("idx_photo_records_capture_time", "capture_time"),
         Index("idx_photo_records_camera", "camera"),
     )
 
@@ -46,6 +48,7 @@ class PhotoRecord(Base):
     llm_model: Mapped[str | None] = mapped_column(String(100))
     llm_response: Mapped[str | None] = mapped_column(Text)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    capture_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -82,6 +85,14 @@ def make_session_factory(engine) -> async_sessionmaker[AsyncSession]:
 async def init_db(engine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text(
+            "ALTER TABLE photo_records "
+            "ADD COLUMN IF NOT EXISTS capture_time TIMESTAMP WITH TIME ZONE"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_photo_records_capture_time "
+            "ON photo_records (capture_time DESC)"
+        ))
 
 
 async def get_processed_keys(session: AsyncSession) -> set[tuple[str, str]]:
@@ -121,6 +132,7 @@ async def upsert_record(session: AsyncSession, record: PhotoRecord) -> PhotoReco
         existing.verdict_reasons = record.verdict_reasons
         existing.llm_model = record.llm_model
         existing.llm_response = record.llm_response
+        existing.capture_time = record.capture_time
         existing.processed_at = record.processed_at
         existing.updated_at = datetime.now(timezone.utc)
         return existing
@@ -131,6 +143,21 @@ async def upsert_record(session: AsyncSession, record: PhotoRecord) -> PhotoReco
 async def get_error_records(session: AsyncSession) -> list[PhotoRecord]:
     result = await session.execute(
         select(PhotoRecord).where(PhotoRecord.status == "error")
+    )
+    return list(result.scalars().all())
+
+
+async def get_records_missing_capture_time(
+    session: AsyncSession, limit: int,
+) -> list[PhotoRecord]:
+    result = await session.execute(
+        select(PhotoRecord)
+        .where(
+            PhotoRecord.capture_time.is_(None),
+            PhotoRecord.jpg_path.is_not(None),
+        )
+        .order_by(PhotoRecord.processed_at.desc().nulls_last())
+        .limit(limit)
     )
     return list(result.scalars().all())
 
@@ -157,6 +184,8 @@ async def get_review_photos(
 
     total = (await session.execute(count_query)).scalar_one()
     query = query.order_by(
+        PhotoRecord.capture_time.desc().nulls_last(),
+        PhotoRecord.processed_at.desc().nulls_last(),
         PhotoRecord.source_dir.desc(),
         PhotoRecord.file_stem.desc(),
     )
