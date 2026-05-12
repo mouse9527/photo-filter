@@ -15,6 +15,7 @@ permissions:
   pull-requests: write
   issues: write
   actions: read
+  id-token: write
 
 concurrency:
   group: claude-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
