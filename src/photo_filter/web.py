@@ -10,7 +10,7 @@ from pathlib import Path
 
 import structlog
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from PIL import Image, ImageOps
 
 from photo_filter.config import AppConfig
@@ -219,7 +219,7 @@ def create_app(config: AppConfig) -> FastAPI:
             arw_path=Path(record.arw_path) if record.arw_path else None,
         )
 
-    @app.post("/api/photos/{photo_id}/undo")
+    @app.post("/api/photos/{photo_id:int}/undo")
     async def undo_photo(photo_id: int):
         async with session_factory() as session:
             record = await get_photo_by_id(session, photo_id)
@@ -241,7 +241,7 @@ def create_app(config: AppConfig) -> FastAPI:
         )
         return {"status": "ok", "restored": len(restored)}
 
-    @app.post("/api/photos/{photo_id}/delete")
+    @app.post("/api/photos/{photo_id:int}/delete")
     async def delete_photo_endpoint(photo_id: int):
         async with session_factory() as session:
             record = await get_photo_by_id(session, photo_id)

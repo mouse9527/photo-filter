@@ -292,9 +292,8 @@ async function batchUndo() {
       body: JSON.stringify({ids}),
     });
     const data = await res.json();
-    ids.forEach(id => removeCard(id));
-    selectedIds.clear();
-    updateBatchBar();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    await loadPhotos();
     toast(`已恢复 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''));
   } catch (e) {
     toast('批量恢复失败');
@@ -311,9 +310,8 @@ async function batchDelete() {
       body: JSON.stringify({ids}),
     });
     const data = await res.json();
-    ids.forEach(id => removeCard(id));
-    selectedIds.clear();
-    updateBatchBar();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    await loadPhotos();
     toast(`已删除 ${data.ok} 张` + (data.failed ? `，${data.failed} 张失败` : ''));
   } catch (e) {
     toast('批量删除失败');
