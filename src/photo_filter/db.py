@@ -93,11 +93,20 @@ async def init_db(engine) -> None:
             "CREATE INDEX IF NOT EXISTS idx_photo_records_capture_time "
             "ON photo_records (capture_time DESC)"
         ))
+        # Idempotent data repair for directories completed by failed analyses.
+        await conn.execute(text(
+            "UPDATE scanned_directories AS d SET completed = false "
+            "WHERE d.completed = true AND EXISTS ("
+            "SELECT 1 FROM photo_records AS p WHERE p.source_dir = d.dir_path "
+            "AND p.status IN ('error', 'pending'))"
+        ))
 
 
 async def get_processed_keys(session: AsyncSession) -> set[tuple[str, str]]:
     result = await session.execute(
-        select(PhotoRecord.file_stem, PhotoRecord.source_dir)
+        select(PhotoRecord.file_stem, PhotoRecord.source_dir).where(
+            PhotoRecord.status.not_in(("error", "pending")),
+        )
     )
     return {(row[0], row[1]) for row in result.all()}
 
@@ -260,9 +269,14 @@ async def upsert_scanned_dir(
 async def count_processed_in_dir(
     session: AsyncSession, source_dir: str,
 ) -> int:
+    """Return the completion count, or zero while any records are unfinished."""
     result = await session.execute(
-        select(func.count(PhotoRecord.id)).where(
-            PhotoRecord.source_dir == source_dir,
-        )
+        select(
+            func.count(PhotoRecord.id),
+            func.count(PhotoRecord.id).filter(PhotoRecord.status.in_(("error", "pending"))),
+        ).where(PhotoRecord.source_dir == source_dir)
     )
-    return result.scalar_one()
+    total, unfinished = result.one()
+    # Historical rejected/deleted records may outnumber files still on disk.
+    # Never let those records hide a remaining failed analysis.
+    return 0 if unfinished else total
