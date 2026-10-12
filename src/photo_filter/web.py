@@ -11,7 +11,7 @@ from pathlib import Path
 import structlog
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
-from PIL import Image, ImageOps
+from PIL import Image
 
 from photo_filter.config import AppConfig
 from photo_filter.db import (
@@ -21,6 +21,7 @@ from photo_filter.db import (
     make_engine,
     make_session_factory,
 )
+from photo_filter.imaging import is_raw_decodable, open_image
 from photo_filter.models import PhotoUnit
 from photo_filter.mover import delete_photo, undo_rejection
 
@@ -33,6 +34,15 @@ WARM_PRESETS = [
     (400, 60),
     (1440, 80),
 ]
+
+
+def _preview_path(jpg_path: str | None, arw_path: str | None) -> str | None:
+    """Review 页面用来出图的文件：有 JPG 用 JPG，否则用可解码的 RAW（DNG）。"""
+    if jpg_path:
+        return jpg_path
+    if arw_path and is_raw_decodable(Path(arw_path)):
+        return arw_path
+    return None
 
 
 def _cache_key_path(file_path: str, w: int, q: int) -> Path:
@@ -48,10 +58,10 @@ def create_app(config: AppConfig) -> FastAPI:
     photo_dirs = config.web.photo_dirs
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    def _resolve_photo_path(jpg_path: str | None) -> Path | None:
-        if not jpg_path:
+    def _resolve_photo_path(file_path: str | None) -> Path | None:
+        if not file_path:
             return None
-        p = Path(jpg_path)
+        p = Path(file_path)
         if p.exists():
             return p
         rejected = p.parent / "_rejected" / p.name
@@ -97,6 +107,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 "source_dir": p.source_dir,
                 "jpg_path": p.jpg_path,
                 "arw_path": p.arw_path,
+                "preview_path": _preview_path(p.jpg_path, p.arw_path),
                 "camera": p.camera,
                 "status": p.status,
                 "confidence": p.confidence,
@@ -119,14 +130,13 @@ def create_app(config: AppConfig) -> FastAPI:
     def _compress_image(
         file_path: Path, max_size: int, quality: int,
     ) -> bytes:
-        with Image.open(file_path) as img:
-            img = ImageOps.exif_transpose(img)
-            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            buf = BytesIO()
-            img.save(buf, format="JPEG", quality=quality)
-            return buf.getvalue()
+        img = open_image(file_path)
+        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        return buf.getvalue()
 
     def _get_compressed(file_path: str, w: int, q: int) -> bytes | None:
         cached = _cache_key_path(file_path, w, q)
@@ -139,19 +149,19 @@ def create_app(config: AppConfig) -> FastAPI:
         cached.write_bytes(data)
         return data
 
-    def _warm_one(jpg_path: str) -> None:
+    def _warm_one(file_path: str) -> None:
         for w, q in WARM_PRESETS:
-            cached = _cache_key_path(jpg_path, w, q)
+            cached = _cache_key_path(file_path, w, q)
             if cached.exists():
                 continue
-            actual = _resolve_photo_path(jpg_path)
+            actual = _resolve_photo_path(file_path)
             if actual is None or not actual.exists():
                 continue
             try:
                 data = _compress_image(actual, max_size=w, quality=q)
                 cached.write_bytes(data)
             except Exception:
-                logger.debug("warm_cache_failed", path=jpg_path, w=w)
+                logger.debug("warm_cache_failed", path=file_path, w=w)
 
     async def _warm_cache() -> int:
         async with session_factory() as session:
@@ -159,22 +169,24 @@ def create_app(config: AppConfig) -> FastAPI:
                 session, status=None, camera=None,
                 limit=5000, offset=0,
             )
-        jpg_paths = [
-            p.jpg_path for p in photos
-            if p.jpg_path and not _cache_key_path(
-                p.jpg_path, WARM_PRESETS[0][0], WARM_PRESETS[0][1],
+        preview_paths = [
+            path for path in (
+                _preview_path(p.jpg_path, p.arw_path) for p in photos
+            )
+            if path and not _cache_key_path(
+                path, WARM_PRESETS[0][0], WARM_PRESETS[0][1],
             ).exists()
         ]
-        if not jpg_paths:
+        if not preview_paths:
             return 0
-        logger.info("cache_warm_start", new=len(jpg_paths), total=total)
+        logger.info("cache_warm_start", new=len(preview_paths), total=total)
         loop = asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=1) as pool:
-            for path in jpg_paths:
+            for path in preview_paths:
                 await loop.run_in_executor(pool, _warm_one, path)
         cached_count = sum(1 for _ in CACHE_DIR.iterdir())
         logger.info("cache_warm_done", cached=cached_count)
-        return len(jpg_paths)
+        return len(preview_paths)
 
     async def _warm_cache_loop() -> None:
         await _warm_cache()

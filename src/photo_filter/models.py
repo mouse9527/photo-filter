@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from photo_filter.imaging import is_raw_decodable
+
 
 class Verdict(StrEnum):
     REJECT = "reject"
@@ -40,7 +42,12 @@ class PhotoUnit:
 
     @property
     def analysis_path(self) -> Path | None:
-        return self.jpg_path
+        # 有 JPG 永远优先 JPG；只有可解码的 RAW（DNG）时才回退到 RAW
+        if self.jpg_path:
+            return self.jpg_path
+        if self.arw_path and is_raw_decodable(self.arw_path):
+            return self.arw_path
+        return None
 
     @property
     def all_paths(self) -> list[Path]:

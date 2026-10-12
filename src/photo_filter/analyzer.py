@@ -7,10 +7,11 @@ from pathlib import Path
 
 import structlog
 from openai import AsyncOpenAI
-from PIL import Image, ImageOps
+from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from photo_filter.config import AppConfig
+from photo_filter.imaging import open_image
 from photo_filter.models import AnalysisResult, IssueCategory, PhotoUnit, Verdict
 from photo_filter.prompt import SYSTEM_PROMPT, USER_PROMPT
 
@@ -18,14 +19,13 @@ logger = structlog.get_logger()
 
 
 def _resize_and_encode(image_path: Path, max_size: int, quality: int) -> str:
-    with Image.open(image_path) as img:
-        img = ImageOps.exif_transpose(img)
-        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        buf = BytesIO()
-        img.save(buf, format="JPEG", quality=quality)
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
+    img = open_image(image_path)
+    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
 def _parse_response(raw: str) -> AnalysisResult:
