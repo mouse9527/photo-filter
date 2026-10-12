@@ -11,7 +11,6 @@ from pathlib import Path
 import structlog
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
-from PIL import Image
 
 from photo_filter.config import AppConfig
 from photo_filter.db import (
@@ -21,7 +20,7 @@ from photo_filter.db import (
     make_engine,
     make_session_factory,
 )
-from photo_filter.imaging import is_raw_decodable, open_image
+from photo_filter.imaging import is_raw_decodable, load_thumbnail
 from photo_filter.models import PhotoUnit
 from photo_filter.mover import delete_photo, undo_rejection
 
@@ -130,8 +129,7 @@ def create_app(config: AppConfig) -> FastAPI:
     def _compress_image(
         file_path: Path, max_size: int, quality: int,
     ) -> bytes:
-        img = open_image(file_path)
-        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        img = load_thumbnail(file_path, max_size)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         buf = BytesIO()
