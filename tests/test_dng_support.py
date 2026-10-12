@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from photo_filter.config import SourceConfig
-from photo_filter.imaging import is_raw_decodable, open_image
+from photo_filter.imaging import is_raw_decodable, load_thumbnail
 from photo_filter.models import PhotoUnit
 from photo_filter.scanner import collect_directories, scan_source
 from photo_filter.web import _preview_path
@@ -25,6 +25,8 @@ def fake_rawpy(monkeypatch):
     calls = []
 
     class _Raw:
+        sizes = types.SimpleNamespace(width=4032, height=2268)
+
         def __init__(self, path):
             self.path = path
 
@@ -50,19 +52,38 @@ def test_is_raw_decodable_only_dng():
     assert not is_raw_decodable(Path("a.JPG"))
 
 
-def test_open_image_jpg_uses_pillow(tmp_path, fake_rawpy):
-    img = open_image(_write_jpg(tmp_path / "a.JPG"))
+def test_load_thumbnail_jpg_uses_pillow(tmp_path, fake_rawpy):
+    img = load_thumbnail(_write_jpg(tmp_path / "a.JPG"), 1000)
     assert img.size == (64, 48)
     assert fake_rawpy == []
 
 
-def test_open_image_dng_uses_rawpy(tmp_path, fake_rawpy):
+def test_load_thumbnail_jpg_downscales_large_image(tmp_path):
+    img = load_thumbnail(_write_jpg(tmp_path / "big.JPG", size=(4000, 3000)), 400)
+    assert img.size == (400, 300)
+    assert img.mode == "RGB"
+
+
+def test_load_thumbnail_applies_exif_orientation(tmp_path):
+    path = tmp_path / "rotated.JPG"
+    exif = Image.Exif()
+    exif[0x0112] = 6  # 需要顺时针旋转 90 度
+    Image.new("RGB", (800, 400)).save(path, format="JPEG", exif=exif)
+    img = load_thumbnail(path, 400)
+    assert img.size == (200, 400)  # 竖图
+
+
+@pytest.mark.parametrize(
+    ("max_size", "half_size"),
+    [(400, True), (1440, True), (2016, True), (3840, False)],
+)
+def test_load_thumbnail_dng_uses_rawpy(tmp_path, fake_rawpy, max_size, half_size):
     path = tmp_path / "a.DNG"
     path.write_bytes(b"not-a-real-dng")
-    img = open_image(path)
-    assert img.size == (40, 30)
+    img = load_thumbnail(path, max_size)
     assert img.mode == "RGB"
-    assert fake_rawpy[0][1] == {"use_camera_wb": True}
+    # 目标不超过传感器长边一半（4032/2）时才用 half_size，否则会损失清晰度
+    assert fake_rawpy[0][1] == {"use_camera_wb": True, "half_size": half_size}
 
 
 @pytest.mark.parametrize(
@@ -123,7 +144,9 @@ SAMPLE_DNG = os.environ.get("PHOTO_FILTER_SAMPLE_DNG")
 
 @pytest.mark.skipif(not SAMPLE_DNG, reason="设置 PHOTO_FILTER_SAMPLE_DNG 指向真实 DNG 时运行")
 def test_real_dng_decodes_full_resolution():
-    img = open_image(Path(SAMPLE_DNG))
+    img = load_thumbnail(Path(SAMPLE_DNG), 3840)
     # Pillow 直接打开只能拿到内嵌的小缩略图，这里确认拿到的是完整画面
     assert min(img.size) > 1000
     assert img.mode == "RGB"
+    small = load_thumbnail(Path(SAMPLE_DNG), 1440)
+    assert max(small.size) == 1440
