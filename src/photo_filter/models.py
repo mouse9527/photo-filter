@@ -20,6 +20,7 @@ class Status(StrEnum):
     ERROR = "error"
     REVIEW = "review"
     DELETED = "deleted"
+    DUPLICATE = "duplicate"
 
 
 class IssueCategory(StrEnum):

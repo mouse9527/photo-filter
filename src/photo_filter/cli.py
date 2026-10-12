@@ -47,12 +47,35 @@ def scan(
     )
 
 
+async def _is_duplicate(
+    unit, session_factory, find_record_by_hash, claimed_hashes,
+) -> bool:
+    """内容与另一张已处理（或本次已认领）的照片相同，例如 Finder 生成的 "xxx 2.JPG"。
+
+    file_hash 有唯一约束，这类文件分析完写库必然失败；被判为 rejected 时
+    还会先把文件挪走再写库失败。所以在调用 LLM 和移动文件之前就跳过。
+    同一张照片重跑（stem 与目录都相同）不算重复。
+    """
+    if claimed_hashes is not None:
+        if unit.file_hash in claimed_hashes:
+            return True
+        claimed_hashes.add(unit.file_hash)
+    async with session_factory() as session:
+        existing = await find_record_by_hash(session, unit.file_hash)
+    if existing is None:
+        return False
+    return not (
+        existing.file_stem == unit.stem
+        and existing.source_dir == str(unit.source_dir)
+    )
+
+
 async def _process_one(
     unit, client, config, session_factory, semaphore,
-    dry_run, counters, results,
+    dry_run, counters, results, claimed_hashes=None,
 ):
     from photo_filter.analyzer import analyze_photo
-    from photo_filter.db import PhotoRecord, upsert_record
+    from photo_filter.db import PhotoRecord, find_record_by_hash, upsert_record
     from photo_filter.models import Verdict
     from photo_filter.mover import reject_photo
     from photo_filter.scanner import compute_sha256, extract_capture_time
@@ -62,6 +85,34 @@ async def _process_one(
             capture_time = extract_capture_time(unit)
             if unit.analysis_path:
                 unit.file_hash = compute_sha256(unit.analysis_path)
+
+            if unit.file_hash and await _is_duplicate(
+                unit, session_factory, find_record_by_hash, claimed_hashes,
+            ):
+                counters["duplicates"] = counters.get("duplicates", 0) + 1
+                logger.warning(
+                    "duplicate_file_skipped",
+                    stem=unit.stem,
+                    source_dir=str(unit.source_dir),
+                    file_hash=unit.file_hash,
+                )
+                if not dry_run:
+                    # 记一条不带 hash 的记录：不撞唯一约束，下次扫描不再重复处理，
+                    # 也计入目录完成数，否则所在目录永远完成不了
+                    async with session_factory() as session:
+                        await upsert_record(session, PhotoRecord(
+                            file_stem=unit.stem,
+                            source_dir=str(unit.source_dir),
+                            file_hash=None,
+                            jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
+                            arw_path=str(unit.arw_path) if unit.arw_path else None,
+                            camera=unit.camera,
+                            status="duplicate",
+                            capture_time=capture_time,
+                            processed_at=datetime.now(timezone.utc),
+                        ))
+                        await session.commit()
+                return
 
             result = await analyze_photo(unit, client, config)
             now = datetime.now(timezone.utc)
@@ -127,20 +178,24 @@ async def _process_one(
         except Exception as exc:
             logger.exception("analysis_failed", stem=unit.stem)
             if not dry_run:
-                async with session_factory() as session:
-                    record = PhotoRecord(
-                        file_stem=unit.stem,
-                        source_dir=str(unit.source_dir),
-                        file_hash=unit.file_hash,
-                        jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
-                        arw_path=str(unit.arw_path) if unit.arw_path else None,
-                        camera=unit.camera,
-                        status="error",
-                        capture_time=capture_time,
-                        processed_at=datetime.now(timezone.utc),
-                    )
-                    await upsert_record(session, record)
-                    await session.commit()
+                try:
+                    async with session_factory() as session:
+                        record = PhotoRecord(
+                            file_stem=unit.stem,
+                            source_dir=str(unit.source_dir),
+                            file_hash=unit.file_hash,
+                            jpg_path=str(unit.jpg_path) if unit.jpg_path else None,
+                            arw_path=str(unit.arw_path) if unit.arw_path else None,
+                            camera=unit.camera,
+                            status="error",
+                            capture_time=capture_time,
+                            processed_at=datetime.now(timezone.utc),
+                        )
+                        await upsert_record(session, record)
+                        await session.commit()
+                except Exception:
+                    # 单张照片的失败不能让 gather 中断整批任务
+                    logger.exception("error_record_failed", stem=unit.stem)
             counters["errors"] += 1
             results.append({
                 "stem": unit.stem,
@@ -186,6 +241,7 @@ async def _scan(
     semaphore = asyncio.Semaphore(config.processing.concurrency)
     counters = {"analyzed": 0, "rejected": 0, "kept": 0, "errors": 0}
     results: list[dict] = []
+    claimed_hashes: set[str] = set()
 
     try:
         async with session_factory() as session:
@@ -235,7 +291,7 @@ async def _scan(
             tasks = [
                 _process_one(
                     unit, client, config, session_factory,
-                    semaphore, dry_run, counters, results,
+                    semaphore, dry_run, counters, results, claimed_hashes,
                 )
                 for unit in batch
             ]

@@ -124,6 +124,15 @@ async def get_daily_count(session: AsyncSession, day: date | None = None) -> int
     return result.scalar_one()
 
 
+async def find_record_by_hash(
+    session: AsyncSession, file_hash: str,
+) -> PhotoRecord | None:
+    result = await session.execute(
+        select(PhotoRecord).where(PhotoRecord.file_hash == file_hash)
+    )
+    return result.scalar_one_or_none()
+
+
 async def upsert_record(session: AsyncSession, record: PhotoRecord) -> PhotoRecord:
     result = await session.execute(
         select(PhotoRecord).where(
