@@ -205,7 +205,7 @@ function createCard(photo) {
   card.className = 'card';
   card.id = 'card-' + photo.id;
 
-  const baseSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
+  const baseSrc = photo.preview_path ? '/photos' + photo.preview_path : '';
   const thumbSrc = baseSrc ? baseSrc + '?w=400&q=60' : '';
   const reasons = (photo.reasons || []).map(r => `<span>${esc(r)}</span>`).join('');
   const conf = photo.confidence != null ? (photo.confidence * 100).toFixed(0) + '%' : '-';
@@ -373,7 +373,7 @@ function closeOverlay() {
 function updateOverlay() {
   const photo = photoList[overlayIndex];
   if (!photo) { closeOverlay(); return; }
-  const baseSrc = photo.jpg_path ? '/photos' + photo.jpg_path : '';
+  const baseSrc = photo.preview_path ? '/photos' + photo.preview_path : '';
   const fullSrc = baseSrc ? baseSrc + '?w=1440&q=80' : '';
   document.getElementById('overlayImg').src = fullSrc;
   document.getElementById('ovName').textContent = photo.file_stem;

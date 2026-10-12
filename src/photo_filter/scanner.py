@@ -79,6 +79,12 @@ def _should_skip_dir(dir_path: Path) -> bool:
     return any(part in SKIP_DIRS for part in dir_path.parts)
 
 
+def _is_appledouble(file_path: Path) -> bool:
+    # macOS 往 NAS 拷文件时生成的 ._xxx 元数据（4KB），不是照片。
+    # 当照片处理会撞 file_hash 唯一约束，曾导致整个扫描任务崩溃。
+    return file_path.name.startswith("._")
+
+
 def collect_directories(
     source: SourceConfig,
 ) -> dict[str, int]:
@@ -94,7 +100,7 @@ def collect_directories(
     for file_path in iterator:
         if not file_path.is_file():
             continue
-        if _should_skip_dir(file_path):
+        if _should_skip_dir(file_path) or _is_appledouble(file_path):
             continue
         if file_path.suffix.upper() not in allowed:
             continue
@@ -131,7 +137,7 @@ def scan_source(
 
     for dir_path in sorted(scan_dirs):
         for file_path in Path(dir_path).iterdir():
-            if not file_path.is_file():
+            if not file_path.is_file() or _is_appledouble(file_path):
                 continue
             ext = file_path.suffix.upper()
             if ext not in allowed:
@@ -160,7 +166,7 @@ def scan_source(
             extra_paths=files["jpg"][1:] + files["raw"][1:] + files["other"],
         )
         if unit.analysis_path is None:
-            logger.debug("skipping_no_jpg", stem=stem, source_dir=source_dir)
+            logger.debug("skipping_no_analyzable_file", stem=stem, source_dir=source_dir)
             continue
         units.append(unit)
 
